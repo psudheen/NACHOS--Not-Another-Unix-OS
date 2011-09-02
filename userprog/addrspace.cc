@@ -25,7 +25,6 @@
   #include "machine.h"
 #endif
 #include "bitmap.h"
-
 //// Global variables -Start
 
 Lock *mainMemLock = new Lock("mainMemLock");
@@ -131,80 +130,52 @@ SwapHeader (NoffHeader *noffH)
 
 AddrSpace::AddrSpace(OpenFile *executable) : fileTable(MaxOpenFiles),lockTable(MAX_POSSIBLE_LOCKS),conditionTable(MAX_POSSIBLE_CONDITIONS)
 {
-    NoffHeader noffH;
-    unsigned int i, size;
-	//intialize global variables
-	//Update the Process Table - Just update the PID 
-	//Increment the PID
-	// processTableLock->Acquire();
-	// TotalProcessCount++;
-	// processTable[TotalProcessCount].PID = TotalProcessCount;
-	// processTable[TotalProcessCount].AliveThreadCount =0;
-	// processTable[TotalProcessCount].TotalThreads =0;
-	// processTable[TotalProcessCount].myProcAddrSpace = NULL;
-	// for(int i<0;i<2000;i++)
-	// processTable[TotalProcessCount].StackLoc[2000]=NULL;
-	// processTableLock->Release(); 
+	NoffHeader noffH;
+	unsigned int i, size;
+	exec=executable;
 
-    // Don't allocate the input or output to disk files
-    fileTable.Put(0);
-    fileTable.Put(0);
+	// Don't allocate the input or output to disk files
+	fileTable.Put(0);
+	fileTable.Put(0);
 
-    executable->ReadAt((char *)&noffH, sizeof(noffH), 0);
-    if ((noffH.noffMagic != NOFFMAGIC) && 
-		(WordToHost(noffH.noffMagic) == NOFFMAGIC))
-    	SwapHeader(&noffH);
-    ASSERT(noffH.noffMagic == NOFFMAGIC);
+	executable->ReadAt((char *)&noffH, sizeof(noffH), 0);
+	if ((noffH.noffMagic != NOFFMAGIC) && 
+	(WordToHost(noffH.noffMagic) == NOFFMAGIC))
+		SwapHeader(&noffH);
+	ASSERT(noffH.noffMagic == NOFFMAGIC);
 
-    size = noffH.code.size + noffH.initData.size + noffH.uninitData.size ;
-    numPages = divRoundUp(size, PageSize) + divRoundUp(UserStackSize,PageSize);
-                                                // we need to increase the size
-						// to leave room for the stack
-    size = numPages * PageSize;
+	size = noffH.code.size + noffH.initData.size + noffH.uninitData.size ;
+	numPages = divRoundUp(size, PageSize) + divRoundUp(UserStackSize,PageSize);
+																							// we need to increase the size
+					// to leave room for the stack
+	size = numPages * PageSize;
 
-    ASSERT(numPages <= NumPhysPages);		// check we're not trying
-						// to run anything too big --
-						// at least until we have
-						// virtual memory
-
-    DEBUG('a', "Initializing address space, num pages %d, size %d\n", 
-					numPages, size);
-// first, set up the translation 
-    pageTableLock[currentThread->currentProcID]->Acquire();
-    pageTable = new TranslationEntry[numPages];
-    for (i = 0; i < numPages; i++)
+	DEBUG('a', "Initializing address space, num pages %d, size %d\n", 
+				numPages, size);
+	// first, set up the translation 
+	pageTableLock[currentThread->currentProcID]->Acquire();	
+	myPageTable=new _TranslationEntry[NumPhysPages];
+	for(int i = 0; i< numPages; i++)
+	{
+		myPageTable[i].virtualPage = i;
+		myPageTable[i].valid = TRUE;
+		myPageTable[i].use = FALSE;  //Hardware sets this whenever page is referenced or modified
+		myPageTable[i].dirty = FALSE;
+		myPageTable[i].readOnly = FALSE;  // if the code segment was entirely on 
+		myPageTable[i].physicalPage=-1;
+		if(i < (unsigned int)(divRoundUp((noffH.code.size + noffH.initData.size),PageSize)))
+		{	
+			myPageTable[i].file_offset=noffH.code.inFileAddr+(i*PageSize);	
+			myPageTable[i].location=0;			
+		} 	
+		else
 		{
-			pageTable[i].virtualPage = i;	// for now, virtual page # = phys page #
-			bitMapLock->Acquire();
-			int pp = PhyMemBitMap->Find();	//Find() will find the free bit and also sets the locn it found
-			//printf("AddrSpace bitmap%d\n",pp);
-			if(pp!=-1)
-				pageTable[i].physicalPage = pp; 
-			else
-				printf("No more main memory left\n");
-			bitMapLock->Release();
-			pageTable[i].valid = TRUE;
-			pageTable[i].use = FALSE;  //Hardware sets this whenever page is referenced or modified
-			pageTable[i].dirty = FALSE;
-			pageTable[i].readOnly = FALSE;  // if the code segment was entirely on 
-																			// a separate page, we could set its 
-																			// pages to be read-only
-			bzero(&(machine->mainMemory[(pageTable[i].physicalPage)*(PageSize)]), PageSize);
-			if(i < (unsigned int)(divRoundUp((noffH.code.size + noffH.initData.size),PageSize)))
-			{	
-				//put one page at a time
-				executable->ReadAt(&(machine->mainMemory[(pageTable[i].physicalPage)*(PageSize)]), PageSize, noffH.code.inFileAddr + (i * PageSize));
-			}	
-    }
-    pageTableLock[currentThread->currentProcID]->Release();
-// zero out the entire address space, to zero the unitialized data segment 
-// and the stack segment
-   // bzero(machine->mainMemory, size);
-
-// then, copy in the code and data segments into memory
-
-   // UserProgReadAt(executable,noffH.code.inFileAddr,size, numPages);
-    
+			myPageTable[i].location=2;
+		}
+	}
+	
+	
+	pageTableLock[currentThread->currentProcID]->Release();   
 }
 
 //----------------------------------------------------------------------
@@ -216,7 +187,7 @@ AddrSpace::AddrSpace(OpenFile *executable) : fileTable(MaxOpenFiles),lockTable(M
 
 AddrSpace::~AddrSpace()
 {
-    delete pageTable;
+    delete myPageTable;
 }
 
 //----------------------------------------------------------------------
@@ -271,57 +242,23 @@ void AddrSpace::SaveState()
 //----------------------------------------------------------------------
 
 void AddrSpace::RestoreState() 
-{
-    machine->pageTable = pageTable;
-    machine->pageTableSize = numPages;
-}
-
-
-
-//----------------------------------------------------------------------
-// UserProgReadAt
-// 	Function to copy bytes from virtual memory to physical memory
-// 
-//
-//      
-//----------------------------------------------------------------------
-ExceptionType UserProgReadAt(OpenFile *exec, int vAdd, int size, int NoOfPagesToCopy)
-{ 
-	//return PageFaultException;//get rid of compiler warning
-  // int VirPageNo =-1;
-  // int PhyPageNo = -1;
-  // int PhyAddr =-1; 
-  
-  // for (int i =0; i< NoOfPagesToCopy; i++)
-	// {
-	  // VirPageNo = vAdd/PageSize;
-	  // if (VirPageNo >= pageTableSize)
-		// {
-		  // DEBUG('a', "virtual page # %d too large for page table size %d!\n",virtAddr, pageTableSize);
-	      // return AddressErrorException;
-		// }
-	  // pageTableLock->Acquire(); 
-	  // PhyPageNo = pageTable[VirPageNo].physicalPage;
-	  // pageTableLock->Release();
-	  // // if the pageFrame is too big, there is something really wrong! 
-      // // An invalid translation was loaded into the page table or TLB. 
-      // if (PhyPageNo >= NumPhysPages)
-       // { 
-		 // DEBUG('a', "*** frame %d > %d!\n", pageFrame, NumPhysPages);
-		 // return BusErrorException;
-    	// }
-	  // PhyAddr = PhyPageNo* PageSize;
-	  // mainMemLock->Acquire();
-	  // if(exec->ReadAt(&(machine->mainMemory[PhyAddr]),PageSize,(vAdd+(i*PageSize))!=0)
-	  // {
-	    // mainMemLock->Release();
-	  // }
-	  // else
-		// {
-		  // mainMemLock->Release();
-	      // return PageFaultException; 
-		// }
-	// }
+{    
+   int i;
+	 machine->pageTableSize = numPages;
+  IntStatus old=interrupt->SetLevel(IntOff);
+	for(i=0;i<TLBSize;i++)
+	{
+		if(machine->tlb[i].valid==true)
+		{
+			ipt[machine->tlb[i].physicalPage].dirty=machine->tlb[i].dirty;
+		}
+	}
+	for(i=0;i<TLBSize;i++)
+	{
+		//if(machine->tlb[i].valid && machine->tlb[i].dirty)
+			machine->tlb[i].valid=false;
+	}
+	interrupt->SetLevel(old);
 }
 
 //----------------------------------------------------------------------
@@ -340,11 +277,12 @@ void AddrSpace::DestroyAddrSpaceBitMap()
 			bitMapLock->Release();
 			return;
 		}		
-		PhyMemBitMap->Clear(pageTable[i].physicalPage); 
-		pageTableLock[currentThread->currentProcID]->Acquire();
-		pageTable[i].physicalPage=-1;
-		pageTableLock[currentThread->currentProcID]->Release();
+		//PhyMemBitMap->Clear(pageTable[i].physicalPage); 
+		pageTableLock[currentThread->currentProcID]->Acquire(); 
+		myPageTable[i].physicalPage=-1;
+		pageTableLock[currentThread->currentProcID]->Release(); 
 		bitMapLock->Release();
+		
 	}
 		
 }
@@ -388,10 +326,10 @@ void AddrSpace::DestroyStackBitMap(unsigned int thisStackLoc)
 	bitMapLock->Acquire();
 	for (int i=0; i<8; i++) 
 	{		
-		PhyMemBitMap->Clear(pageTable[myStackLocTop+i].physicalPage); 
-		pageTable[myStackLocTop+i].physicalPage=-1;
+		//PhyMemBitMap->Clear(pageTable[myStackLocTop+i].physicalPage); 
+		myPageTable[myStackLocTop+i].physicalPage=-1;
 	}
 	bitMapLock->Release();
  }
 
-
+ 

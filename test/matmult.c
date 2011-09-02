@@ -16,9 +16,12 @@
 int A[Dim][Dim];
 int B[Dim][Dim];
 int C[Dim][Dim];
+int D[Dim][Dim];
+int E[Dim][Dim];
+int F[Dim][Dim];
 
 int
-main()
+main1()
 {
     int i, j, k;
 
@@ -33,6 +36,46 @@ main()
 	for (j = 0; j < Dim; j++)
             for (k = 0; k < Dim; k++)
 		 C[i][j] += A[i][k] * B[k][j];
-
-    Exit(C[Dim-1][Dim-1]);		/* and then we're done */
+		Print("\n");
+		Print("\n");
+		Print("\n");
+		
+		Print1("THE OUTPUT OF THE MATMULT OPERATION IS %d !!!!!!!!!!!!!!!!!!!! \n",C[Dim-1][Dim-1]);
+		Print("\n");
+		Print("\n");
+   Exit(C[Dim-1][Dim-1]);		/* and then we're done */
+		
 }
+int
+main2()
+{
+    int i, j, k;
+
+    for (i = 0; i < Dim; i++)		/* first initialize the matrices */
+	for (j = 0; j < Dim; j++) {
+	     D[i][j] = i;
+	     E[i][j] = j;
+	     F[i][j] = 0;
+	}
+
+    for (i = 0; i < Dim; i++)		/* then multiply them together */
+	for (j = 0; j < Dim; j++)
+            for (k = 0; k < Dim; k++)
+		 F[i][j] += D[i][k] * E[k][j];
+		Print("\n");
+		Print("\n");
+		Print("\n");
+		
+		Print1("THE OUTPUT OF THE MATMULT OPERATION IS %d !!!!!!!!!!!!!!!!!!!! \n",F[Dim-1][Dim-1]);
+		Print("\n");
+		Print("\n");
+   Exit(F[Dim-1][Dim-1]);		/* and then we're done */
+		
+}
+
+
+void main()
+{
+   Fork(main2);
+   Fork(main1);
+ }

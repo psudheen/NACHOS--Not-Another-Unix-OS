@@ -41,6 +41,8 @@ int main()
  Print("Choice#6:\n");
  Print("TestCase#6:Single instance of CarlJr Simulation\n\n");
  
+ Print("choice#7:\n");
+ 
  Choice=Scan("%d");
 
   switch (Choice)
@@ -68,8 +70,14 @@ int main()
 							Print("Number of Customers=20\n");
 							Fork(t9);
 							break;
+							
+			case 7: Print("exec of matmult\n");	
+                    Exec("../test/matmult",15);
+					Exec("../test/matmult",15);
+                    break;						 
 			default: Print("Invalid Choice\n");
 								break;
+								
   }
 	Exit(1);
  } 

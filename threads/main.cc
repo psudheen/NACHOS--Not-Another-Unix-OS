@@ -66,6 +66,9 @@ extern void MailTest(int networkID);
 extern void TestSuite(void);
 void CarlJrSimulation (void);
 void SimiluationMenu();
+#ifdef NETWORK
+extern void Server(int ServerID);
+#endif
 
 //----------------------------------------------------------------------
 // main
@@ -105,10 +108,13 @@ main(int argc, char **argv)
         ASSERT(argc > 1);
             StartProcess(*(argv + 1));
             argCount = 2;
-        } else if (!strcmp(*argv, "-c")) {      // test the console
+        } 
+		else if (!strcmp(*argv, "-c"))
+		{      // test the console
         if (argc == 1)
             ConsoleTest(NULL, NULL);
-        else {
+        else
+		{
         ASSERT(argc > 2);
             ConsoleTest(*(argv + 1), *(argv + 2));
             argCount = 3;
@@ -141,11 +147,21 @@ main(int argc, char **argv)
 #endif // FILESYS
 #ifdef NETWORK
         if (!strcmp(*argv, "-o")) {
-        ASSERT(argc > 1);
-            Delay(2);               // delay for 2 seconds
-                        // to give the user time to
-                        // start up another nachos
-            MailTest(atoi(*(argv + 1)));
+	    ASSERT(argc > 1);
+            //Delay(2); 				// delay for 2 seconds
+						// to give the user time to 
+						// start up another nachos
+            //MailTest(atoi(*(argv + 1)));
+            argCount = 2;
+						//printf("Calling Client\n");
+        }
+				if (!strcmp(*argv, "-server")) {
+	    ASSERT(argc > 1);
+            Delay(2); 				// delay for 2 seconds
+						// to give the user time to 
+						// start up another nachos
+						ServerID=0;
+            Server(atoi(*(argv + 1)));
             argCount = 2;
         }
 #endif // NETWORK

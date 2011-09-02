@@ -31,7 +31,7 @@ CPP = $(GCCDIR)cpp
 INCDIR =-I../userprog -I../threads
 CFLAGS = -G 0 -c $(INCDIR)
 
-all: halt matmult sort testfiles carljrsim carljrtest
+all: halt matmult sort testfiles carljrsim carljrtest test2 test1 test3 test4
 
 start.o: start.s ../userprog/syscall.h
 	$(CPP) $(CPPFLAGS) start.s > strt.s
@@ -44,12 +44,37 @@ halt: halt.o start.o
 	$(LD) $(LDFLAGS) start.o halt.o -o halt.coff
 	../bin/coff2noff halt.coff halt
 
+test1.o: test1.c
+	$(CC) $(CFLAGS) -c test1.c
+test1: test1.o start.o
+	$(LD) $(LDFLAGS) start.o test1.o -o test1.coff
+	../bin/coff2noff test1.coff test1
+
+test3.o: test3.c
+	$(CC) $(CFLAGS) -c test3.c
+test3: test3.o start.o
+	$(LD) $(LDFLAGS) start.o test3.o -o test3.coff
+	../bin/coff2noff test3.coff test3
+	
+test4.o: test4.c
+	$(CC) $(CFLAGS) -c test4.c
+test4: test4.o start.o
+	$(LD) $(LDFLAGS) start.o test4.o -o test4.coff
+	../bin/coff2noff test4.coff test4
+
+
 sort.o: sort.c
 	$(CC) $(CFLAGS) -c sort.c
 sort: sort.o start.o
 	$(LD) $(LDFLAGS) start.o sort.o -o sort.coff
 	../bin/coff2noff sort.coff sort
-
+	
+test2.o: test2.c
+	$(CC) $(CFLAGS) -c test2.c
+test2: test2.o start.o
+	$(LD) $(LDFLAGS) start.o test2.o -o test2.coff
+	../bin/coff2noff test2.coff test2
+	
 matmult.o: matmult.c
 	$(CC) $(CFLAGS) -c matmult.c
 matmult: matmult.o start.o

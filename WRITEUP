@@ -1,0 +1,1063 @@
+
+
+
+
+Title:  Writeup for Project 2, Fall 2010
+
+ Date:  10/10/2010
+
+ Group Num 35 :     Name                                                                           Email            Student ID
+                    Pramod K Sudheendra,                                                           psudheen           6592406458
+                    Madhumitha Rajathi Rajakumar Nallathamby                                       rajakuma           2485511454
+
+
+
+
+I. Requirements:
+
+ 	This project requires modifying Nachos to support Multiprogramming. The first step is to implement the Exit, Halt and Yield functions as System calls.
+For multiple programs to run smoothly, we need to have locks and condition variables to ensure mutual exclusion and avoid race conditions. So we have to 
+implement functions to create, destroy and manipulate locks and condition variables also as system calls.The next step in implementing multiprogramming is
+to come up with a way of allocating physical memory frames so that multiple programs can be loaded into memory at once. Then, the Execute and Fork system 
+calls can be implemented. Once the required implementations are done, and Nachos converted to accommodate multiprogramming, multiple instances of  
+'Carl's Jr restaurant simulation', which was implemented in Project 1,  are to be run and tested. If multiple instances of this multi-threaded program 
+runs with synchronization, it means that Nachos has been converted to support Multiprogramming.
+
+
+
+II. Assumptions:
+	
+	- Maximum number of Open Files possible is 256
+	- Maximum number of Child Spaces is 256
+	- NumPhysPages in 'machine.h' is set to 5120 as each intance of Carl Jr simulation is likely is exceed 2100 pages and there will 2 Carl Jr programs running.
+	- Maximum number of Locks possible is 1000
+	- Maximum number of Condition variables is also set tp 1000
+	- UserStackSize is set to 1024
+
+
+
+III. Design:
+
+	PartI: SYSTEM CALLS AND EXCEPTION HANDLING
+
+	The System calls required are included in exception.cc and linked to the Exception Handler function in it. 
+
+	*LOCKS:
+
+		int CreateLock_Syscall(unsigned int vaddr, int len)
+	
+    		 Create a lock  with the name in the user buffer pointed to by vaddr.  The lock name is at most MAXFILENAME chars long.  If the lock is created
+     successfully, it is put in the address space's lock table and an id (lock id) returned that can find the lock later.  If there are any errors, -1 is 
+     returned.
+			{
+				if(length is <0 or <MAXFILENAME)
+				{
+					Error
+					Print-invalid size
+					exit
+				}
+
+				if(virtual address<0 or >address space size)
+				{
+					Error
+	 				print-Invalid address
+					exit
+				 }
+
+				if(check for space)
+    			{		
+					Error
+       				Print-Address length exceeded the total size
+       				exit
+       		    }
+
+				char *buf = new char[len+1];	// Kernel buffer to put the name in
+   				Lock *l;			// The new lock object
+    			int id;				// The lockid
+
+   
+    			if (buf is NULL) 
+    			{
+					Error
+					print-Can't allocate kernel buffer in CreateLock
+					exit
+   				 }
+
+    			if(copying content of virtual address into buf failed)
+    			 {
+					Error
+					print-Bad pointer passed to CreateLock
+					delete buf
+					exit
+			     }
+ 
+				Acquire Table update lock
+				l=new lock
+
+				if ( l )
+    			{	  
+	    			if (Putting l in the lockTable failed)
+					{
+						delete l;
+					print-no slots in the lock table
+				}
+				else
+				{
+		   			 Make LockUsage counter[id]=0
+					 release table update lock
+		   			 exit	
+		   		}
+    		}
+    		Release table update lock
+			exit
+		}
+
+	************************************************************************
+		void DestroyLock_Syscall(int LockPos)
+		{
+			if(Lockposition<0 or >Max no of locks)
+			{
+				printf("ERROR: Invalid Lock Index\n")
+				return
+			}
+
+			Acquire TableUpdateLock
+			l= new lock
+			i= get lock value corresponding to LockPos from the lock table
+			if(LockUsuageCntr[LockPos]is 0)
+			{
+				if(l)
+				{
+		  			delete l
+		  			Remove lock from table
+				}
+		 		else
+				printf-ERROR:Lock pointer is NULL. Destroy lock failed!
+			}
+    		else
+      			printf-ERROR:Lock does not exist. Destroy lock failed!    
+    
+    		release Table update lock
+		}
+
+    ***********************************************************************************
+		void AcquireLock_Syscall(int LockPos)
+		{
+				if(Lockposition<0 or >Max no of locks)
+				{
+					printf("ERROR: Invalid Lock Index\n")
+					return
+				}
+
+			Acquire TableUpdateLock
+			l= new lock
+			i= get lock value corresponding to LockPos from the lock table
+			if(l)
+			{
+				Acquire the lock 'l'
+				increment the lock usage counter[LockPos]
+			}
+			 else
+			 	printf-ERROR:Lock pointer is NULL. Acquire lock failed!
+	           if(l!=NULL)
+			release Table update lock
+		}
+
+	*****************************************************************************************  
+		void ReleaseLock_Syscall(int LockPos)
+		{
+			if(Lockposition<0 or >Max no of locks
+			{
+				printf("ERROR: Invalid Lock Index\n")
+				return
+			}
+
+		    Acquire TableUpdateLock
+			l= new lock
+			l= get lock value corresponding to LockPos from the lock table
+			if(l)
+			{
+				if(lock usage counter[LockPos]>0)
+				{
+					Acquire the lock 'l'
+					increment the lock usage counter[LockPos]
+				}
+			 	else
+				 	printf-ERROR:Release lock failed!
+			}
+			else
+			{	
+				printf-ERROR:Lock does not exist. Release lock failed!
+			}
+			release Table update lock 
+		}
+
+	 ********************************************************************************************
+
+	*CONDITION VARIABLES:
+
+		int CreateCondition_Syscall(unsigned int vaddr, int len)
+		{
+		     if(length is <0 or <MAXFILENAME)
+			 {
+			 	Error
+			 	Print-invalid size
+			 	exit
+			 }
+
+			 if(virtual address<0 or >address space size)
+			 {
+			 	Error
+			 	print-Invalid address
+			 	exit
+			 }
+
+			 if(check for space)
+		     {		
+			 	Error
+		     	Print-Address length exceeded the total size
+		     	exit
+		     }
+
+			 char *buf = new char[len+1];	// Kernel buffer to put the name in
+		   
+		     if (buf is NULL) 
+		     {
+			 	Error
+			 	print-Can't allocate kernel buffer in CreateCV
+			 	exit
+		   	 }
+
+		     if(copying content of virtual address into buf failed)
+		     {
+			 	Error
+			 	print-Bad pointer passed to CreateCV
+			 	delete buf
+			 	exit
+			 }
+		 
+			Acquire table update lock
+		    c = new Condition 
+		    if ( c )
+		    {	  
+		        if (put c in condition table fails )
+				{
+		    		delete c;
+					print- unable to create CV
+				}
+		    	else
+		    	{
+				   make	CVUsuageCntr[id] 0
+		    	    release table update lock
+					exit
+		    	}
+		    }
+
+		    table update lock release
+		    exit  
+		}
+
+	***************************************************************************
+		void DestroyCondition_Syscall(int ConditionPos)
+		{
+		    // Destroy the ConditionVariable associated with id ConditionPos.  WITH error reporting
+			if(Conditionposition<0 or >Max no of CV)
+			{
+				printf("ERROR: Invalid CV Index\n")
+				return
+			}
+			Acquire TableUpdateLock
+			c= new condition
+			if(LockUsuageCntr[LockPos]is 0)
+			{
+				if(c)
+				{
+		  			delete c
+		  			Remove CV from table
+				}
+		 		else
+					printf-ERROR:Condition pointer is NULL. Destroy Condition failed!
+			}
+	   		else
+	   			printf-ERROR:CV does not exist. Destroy CV failed!    
+	 
+	   		release Table update lock
+		}
+
+	**********************************************************************************
+		void Wait_Syscall(int ConditionPos,int LockPos)
+		{
+			if(Conditionposition<0 or >Max no of CV)
+			{
+				printf("ERROR: Invalid CV Index\n")
+				return
+			}
+
+			if(Lockposition<0 or >Max no of locks
+			{
+				printf("ERROR: Invalid Lock Index\n")
+				return
+			}
+			l= new lock
+			c= new condition
+
+			 Table update lock acquire
+			 l= get value corresponding to LockPos from lock table
+			 c= get value coresponding to ConditionPos from ConditionTable
+			 release table update lock
+		    
+		    if (c)
+			{
+	      		if (l)
+	      		{
+				    increment usage counter[Conditionpos]
+					c->Wait(l)
+				}
+				else
+				{
+					Error-Bad lock passed  
+				}
+			}
+		    else
+			{
+		    	error-bad CV passed  
+			}
+		}
+
+	***********************************************************************************
+		void Signal_Syscall(int ConditionPos,int LockPos)
+		{
+	   		if(Conditionposition<0 or >Max no of CV)
+			{
+				printf("ERROR: Invalid CV Index\n")
+				return
+			}
+
+			if(Lockposition<0 or >Max no of locks
+			{
+				printf("ERROR: Invalid Lock Index\n")
+				return
+			}
+			l= new lock
+			c= new condition
+
+			 Table update lock acquire
+			 l= get value corresponding to LockPos from lock table
+			 c= get value coresponding to ConditionPos from ConditionTable
+			 release table update lock
+		    
+		    if (c)
+			{
+	      		if (l)
+	      		{
+				    increment usage counter[Conditionpos]
+					c->Signal(l)
+				}
+				else
+				{
+					Error-Bad lock passed  
+				}
+			}
+		    else
+			{
+		    	error-bad CV passed  
+			}
+		}
+
+	******************************************************************************
+		void Broadcast_Syscall(int ConditionPos,int LockPos)
+		{
+   			if(Conditionposition<0 or >Max no of CV)
+			{
+				printf("ERROR: Invalid CV Index\n")
+				return
+			}
+
+			if(Lockposition<0 or >Max no of locks
+			{
+				printf("ERROR: Invalid Lock Index\n")
+				return
+			}
+			l= new lock
+			c= new condition
+
+			 Table update lock acquire
+			 l= get value corresponding to LockPos from lock table
+			 c= get value coresponding to ConditionPos from ConditionTable
+			 release table update lock
+		    
+		    if (c)
+			{
+	      		if (l)
+	      		{
+				    increment usage counter[Conditionpos]
+					c->Broadcast(l)
+				}
+				else
+				{
+					Error-Bad lock passed  
+				}
+			}
+		    else
+			{
+		    	error-bad CV passed  
+			}
+		}
+
+	******************************************************************************************
+
+	*YIELD:
+
+		void Yield_Syscall()
+		{
+			call currentThread->Yield
+		}
+
+	*******************************************************************************************
+
+	*EXIT:
+
+		void Exit_Syscall(int exitCode)
+		{
+			if(valid currentThreadID and currentProcessID)
+			{
+				processTableLock->Acquire
+				if(no threads are alive in the current process)
+				{
+					if(currentProcess is the last process)
+					{
+						processTableLock->Release()
+						//Shutdown OS
+						interrupt->Halt()
+					}
+					else	   //last thread in current process, but not last process
+					{
+						Destroy the bitmap
+						Destroy page table
+						delete currentThread->space
+						TotalProcessCount--
+						processTableLock->Release
+						currentThread->Finish()
+					}
+				}
+				else	//not the last thread
+				{
+					Get the stack top address to destroy this thread stack
+					destroy the bitmap
+					default the stack loc on Proc table	to NULL
+					Decrement the Active Thread count
+					if(aliveThreadcount>0)
+						 AliveThreadCount--
+						 
+					processTableLock->Release()
+					currentThread->Finish()			
+				}
+			}
+			else
+			{
+				currentThread->Finish()
+			}
+		}
+			
+	******************************************************************************************************************
+	PartII:   MULTIPROGRAMMING
+
+		void KernelFunc(int vaddr)
+		{
+			setup all registers and then switch to user mode to run the user program
+			write to the register PCReg the virtual address.
+			call Restorestate function inorder to prevent information loss while context switching.
+			get value from process table write to the stack register , the starting postion of the stack for this thread.
+			Acquire process table lock	
+			for (j=0; j<TotalProcessCount; j++)
+			{
+			  find the process Id
+				{
+				  break;
+				}
+			}
+			get stack address from the process table for current thread
+		   write the current thread's stack address to stackReg
+		   Release Process table lock
+			machine->Run();
+		}
+
+	****************************************************************************************
+
+	*FORK
+
+		void Fork_Syscall( unsigned int vaddr)
+		{
+			if(virtual address<0 or >address space size)
+					 {
+					 	Error
+					 	print-Invalid address
+					 	exit
+					 }
+
+		   t= new thread
+			if(currentThread->space==NULL)
+			{
+				Print-Thread has illegal address space
+			}
+			make a page table
+			acquire proces table lock			
+			get Process ID
+			release process table lock
+			currentPID=0;
+			processTable[currentPID].myProcAddrSpace=currentThread->space; 
+			if(pageTableLock[currentPID]==NULL)
+			{
+				print-pageTableLock is a NULL pointer
+				exit
+			}
+			pageTableLock[currentPID]->Acquire
+			get the number of pages
+			get page table
+			create new translation entry
+		    copy old to new pagetable
+			allocate new stack
+			initialize the new created pagetable entry
+			delete old page table
+			t= new thread
+			numpages=numpages+p
+			save the stack start location for the new thread in its process table
+		   	Release process table lock
+			t->Fork(kernelFunction,vaddr)
+
+		}
+ 
+	*****************************************************************************************
+
+	*EXECUTE:
+
+		void ExecFunc(int addr)
+		{
+			initialise all registers and then switch to user mode to run the user program
+			write to the register PCReg the virtual address.
+			call Restorestate function inorder to prevent information loss while context switching.
+	    	Run the new executable as a thread!
+	    	machine->Run()
+	   	}
+
+		SpaceId Exec_Syscall(unsigned int fileName,int len)
+		{
+			if(len<=0)
+			{
+				Print-Invalid filename length for EXEC system call!
+				exit
+			}
+		    OpenFile *executable;
+		    char *buf= new char(len+1);
+			if(copyin(fileName,len,buf)==-1 ) 
+			{
+			    Print-Bad pointer passed
+				delete buf
+				return
+			}
+				
+			buf[ len]='\0';
+			Open(buf)
+			delete buf;
+			if(executable==0)
+			{
+				print-file not found
+		        return -1;
+		    }
+		    
+			AddrSpace *myProcAddrSpace=new AddrSpace(executable);
+			delete executable;
+				
+			Update proc table
+			
+			Get the Stack Address
+			t=new thread
+			t->space=myProcAddrSpace
+			t->currentThreadID=0
+			AliveProcCount++
+			TotalProcessCount++
+			processTableLock->Release()
+				
+			Start new process created as a thread
+			t->Fork((VoidFunctionPtr)ExecFunc,0);
+			return the address space identifier
+		}
+
+
+
+	*****************************************************************************************
+
+	*For PRINTing the output and SCANing the input:
+			
+		We used the Print(print a string of characters), Print1 (prints a single variable), Print2 (prints 2 variables) and Scan(gets an integer input 
+	from the user and stores it) functions provided by the grader. 
+
+
+IV. Implementation:
+
+	Files Modified:
+		In the 'test' directory,
+		"	start.s
+		"	testfiles.c
+		In the 'userprog' directory,
+		"	addrspace.h
+		"	addrspace.cc
+		"	exception.cc
+		"	syscall.h
+
+		In the 'machine' directory,
+		"	machine.h
+
+
+	Files added:
+		In the 'test' directory
+		"	carljrsim.c 
+
+
+	Data Structures added:
+		"	
+
+
+	Data Structures modified:
+	"	In 'userprog' directory, in  'addrspace.h'
+		class AddrSpace
+		 {
+			public:
+			Table lockTable;            // Table of User program locks
+    		Table conditionTable;       // Table of User program Conditon variables
+			TranslationEntry* GetpageTable()
+    		{
+     			 return pageTable;
+    		}
+	 	void SetpageTable(TranslationEntry *myPageTable)
+    		{
+       			pageTable=myPageTable;
+    		} 
+    	int GetnumPages()
+    	{
+      		 return  numPages;
+    	}
+   	 	void SetnumPages(int mynumPages)
+     	{
+       		 numPages=mynumPages;
+     	}
+		void DelPageTable()
+		{
+		   delete pageTable;
+		}
+	}
+
+
+	Functions added:
+	"	In start.s, the System call stubs that were added are,
+		        .globl CreateLock
+		        .ent  CreateLock
+		CreateLock:
+		         addiu $2,$0,SC_CreateLock
+		         syscall
+		         j     $31
+		         .end CreateLock
+
+		 		.globl DestroyLock
+		        .ent  DestroyLock
+		DestroyLock:
+		         addiu $2,$0,SC_DestroyLock
+		         syscall
+		         j     $31
+		         .end DestroyLock
+
+				.globl CreateCondition
+				.ent	CreateCondition
+		CreateCondition:	
+				addiu $2,$0,SC_CreateCondition
+				syscall
+				j	$31
+				.end CreateCondition
+
+			.globl DestroyCondition
+			.ent	DestroyCondition
+		DestroyCondition:	
+			addiu $2,$0,SC_DestroyCondition
+			syscall
+			j	$31
+			.end DestroyCondition
+			
+			.globl Acquire
+			.ent	Acquire
+		Acquire:	
+			addiu $2,$0,SC_Acquire
+			syscall
+			j	$31
+			.end Acquire
+
+			.globl Release
+			.ent	Release
+		Release:	
+			addiu $2,$0,SC_Release
+			syscall
+			j	$31
+			.end Release
+
+			.globl Wait
+			.ent	Wait
+		Wait:	
+			addiu $2,$0,SC_Wait
+			syscall
+			j	$31
+			.end Wait
+
+			.globl Signal
+			.ent	Signal
+		Signal:	
+			addiu $2,$0,SC_Signal
+			syscall
+			j	$31
+			.end Signal
+
+			.globl Broadcast
+			.ent	Broadcast
+		Broadcast:	
+			addiu $2,$0,SC_Broadcast
+			syscall
+			j	$31
+			.end Broadcast
+
+			.globl Print
+			.ent	Print
+		Print:	
+			addiu $2,$0,SC_Print
+			syscall
+			j	$31
+			.end Print
+		    
+		    
+			.globl Print1
+			.ent	Print1
+		Print1:	
+			addiu $2,$0,SC_Print1
+			syscall
+			j	$31
+			.end Print1
+
+
+			.globl Print2
+			.ent	Print2
+		Print2:	
+			addiu $2,$0,SC_Print2
+			syscall
+			j	$31
+			.end Print2
+
+			.globl Print3
+			.ent	Print3
+		Print3:	
+			addiu $2,$0,SC_Print3
+			syscall
+			j	$31
+			.end Print3
+
+			.globl Scan
+			.ent	Scan
+		Scan:	
+			addiu $2,$0,SC_Scan
+			syscall
+			j	$31
+			.end Scan
+
+
+	"	Functions to run the test cases were added in 'testfiles.c'
+
+		i.	void SysCallTests ()
+		ii.	void TestsForCreateLock ()
+		iii.	void TestsForAcquireLock ()
+		iv.	void TestsForReleaseLock ()
+		v.	void TestsForDestroyLock ()
+		vi.	void TestsOnLocks ()
+		vii.	void TestsForCreateConditionDestroyCondition  ()    
+		viii.	void TestsForWaitSignalBroadcast ()
+		ix.	void TestsForForkandYield ()
+		x.	void FunctionToFork ()
+		xi.	void t1 ()
+		xii.	void t2 ()
+		xiii.	void t3 ()
+		xiv.	void t4 ()
+		xv.	void t5 ()
+
+
+	"	In 'syscall.h'/ 'exception.cc'
+		
+		i.	LockId CreateLock(unsigned int vAddr, int len)
+		ii.	void DestroyLock(LockId lock)
+		iii.	void Acquire(LockId lock)
+		iv.	void Release(LockId lock)
+		v.	ConditionId CreateCondition(unsigned int vAddr, int len)
+		vi.	void DestroyCondition(ConditionId condition)
+		vii.	void Wait(ConditionId condition, LockId lock)
+		viii.	void Signal(ConditionId condition, LockId lock)
+		ix.	void Broadcast(ConditionId condition, LockId lock)
+		x.	void Print(unsigned int vaddr)
+		xi.	void Print1(unsigned int vaddr, int i)
+		xii.	void Print2(unsigned int vaddr, int i, int j)
+		xiii.	void Print3(unsigned int vaddr, int i, int j, int k)
+		xiv.	int  Scan(unsigned int vaddr)
+		xv.	void KernelFunc(int vaddr)
+
+
+	Functions modified:
+		In 'userprog' directory,
+		"	In 'addrspace.cc',  
+				AddrSpace::AddrSpace(OpenFile *executable) : fileTable(MaxOpenFiles)
+		"	In 'exception.cc'
+				void ExceptionHandler(ExceptionType which)
+
+
+
+V. Testing: 
+
+1.Testing of the System Calls can be done by selecting by giving the command
+nachos -x ../test/testfiles
+and then choosing the appropriate testcase from the list displayed. Tests have been written to validate all possible occurrences with Locks and Condition 
+variables.
+
+2. To test multiple Carl Jr simulation, please enter nachos -x ../test/carljrtest
+
+
+	TestCase1:
+		Validates the CreateLock, Acquire, Release, DestroyLock system calls by
+			"	Passing invalid parameters to the functions
+			"	Trying to Acquire a lock that was not created
+			"	Trying to Release a lock that was not acquired
+			"	Trying to Release a lock that was not created
+			"	Trying to Destroy a lock that was not created
+
+		Output:
+			Valid CreateLock System calls:
+			Lock1=0
+			Lock2=1
+
+			Passing invalid values for address length:
+			Invalid size for Lock name
+			Lock3=-1
+			Invalid size for Lock name
+			Lock4=-1
+			Invalid size for Lock name
+			Lock5=-1
+
+			Passing invalid values as Lock Index:
+			ERROR: Invalid Lock Index
+			ERROR: Invalid Lock Index
+			ERROR: Invalid Lock Index
+
+			Try to Acquire a lock that was not created
+			ERROR:Lock Pointer is NULL.Acquire lock failed!
+
+			Passing invalid values as Lock Index:
+			ERROR: Invalid Lock Index
+			ERROR: Invalid Lock Index
+
+			Try to Release a lock that was not Acquired
+			ERROR:Release lock failed!
+
+			Try to Release a lock that was not Created
+			ERROR: Invalid Lock Index
+
+			Passing invalid values as Lock Index:
+			ERROR: Invalid Lock Index
+			ERROR: Invalid Lock Index
+
+			Try to Destroy a lock that was not Created
+			ERROR: Invalid Lock Index
+			No threads ready or runnable, and no pending interrupts.
+			Assuming the program completed.
+			Machine halting!
+
+			Ticks: total 1797, idle 0, system 1310, user 487
+			Disk I/O: reads 0, writes 0
+			Console I/O: reads 0, writes 0
+			Paging: faults 0
+			Network I/O: packets received 0, sent 0
+
+			Cleaning up...
+
+
+	TestCase2:
+		Other test cases for Locks, such as
+			"	Trying to Destroy a Lock that has not been released
+			"	Trying to Acquire a Lock that has been destroyed
+
+		Output:
+			Try to destroy a lock that has not been released
+			ERROR:Lock does not exist. Destroy lock failed!
+
+			Try to acquire a lock that has been destroyed:
+			ERROR:Lock Pointer is NULL.Acquire lock failed!
+			No threads ready or runnable, and no pending interrupts.
+			Assuming the program completed.
+			Machine halting!
+
+			Ticks: total 1506, idle 0, system 1270, user 236
+			Disk I/O: reads 0, writes 0
+			Console I/O: reads 0, writes 0
+			Paging: faults 0
+			Network I/O: packets received 0, sent 0
+
+			Cleaning up...
+
+
+	TestCase3:
+		Validates the CreateCondition and DestroyCondition system calls by
+			"	Passing invalid parameters to the functions
+			"	Trying to Destroy a Condition variable that was not created
+
+		Output:
+			Passing invalid values for address length:
+			Invalid size for Condition name
+			Invalid size for Condition name
+			Invalid size for Condition name
+
+			Passing invalid values as CV Index:
+			ERROR: Invalid CV Index
+			ERROR: Invalid CV Index
+
+			Try to Destroy a CV that was not Created:
+			ERROR: Invalid CV Index
+			No threads ready or runnable, and no pending interrupts.
+			Assuming the program completed.
+			Machine halting!
+
+			Ticks: total 1446, idle 0, system 1170, user 276
+			Disk I/O: reads 0, writes 0
+			Console I/O: reads 0, writes 0
+			Paging: faults 0
+			Network I/O: packets received 0, sent 0
+
+			Cleaning up...
+
+
+	TestCase4:
+	  	Validates  the Wait, Signal and Broadcast functions on Condition Variables by
+			"	Testing valid wait, signal and broadcast operations
+			"	Passing invalid parameters to the functions
+			"	Trying to wait, signal, or broadcast on a CV while holding another lock
+
+		Output:
+			Invalid size for Condition name
+
+			Pass invalid parameters to wait:
+			ERROR: Invalid CV Index
+			ERROR: Invalid Lock Index
+			ERROR: Invalid CV Index
+
+			Try to wait on the wrong Lock:
+			Lock not held by thread, Wait failed for CV CreateConditionVariable
+			t1 is going on Wait 
+
+			Pass invalid parameters to signal:
+			ERROR: Invalid CV Index
+			ERROR: Invalid Lock Index
+			ERROR: Invalid CV Index
+
+			Try to signal on the wrong Lock:
+			Locks must match, Signal failed for CV CreateConditionVariable
+			t2 is going to Signal t1 
+			 t1 was signalled 
+			t3 is going on Wait 
+			t4 is going on Wait 
+			Pass invalid parameters to broadcast:
+			ERROR: Invalid CV Index
+			ERROR: Invalid Lock Index
+			ERROR: Invalid CV Index
+
+			t5 is going to Broadcast
+			 t3 woke up 
+			 t4 woke up 
+			No threads ready or runnable, and no pending interrupts.
+			Assuming the program completed.
+			Machine halting!
+
+			Ticks: total 3832, idle 0, system 3130, user 702
+			Disk I/O: reads 0, writes 0
+			Console I/O: reads 0, writes 0
+			Paging: faults 0
+			Network I/O: packets received 0, sent 0
+
+			Cleaning up...
+
+
+	TestCase5:
+		Tests the functioning of the Fork and Yield system calls. In this test case, the fork function is called recursively and the current thread is 
+made to yield for some time to give CPU time to the forked function. The execution of this can be seen from the output of this testcase.
+
+	    Output:
+	        Forking multiple times:
+			Function forked successfully
+			Function forked successfully
+			Function forked successfully
+			Function forked successfully
+			Function forked successfully
+			Function forked successfully
+			Function forked successfully
+			Function forked successfully
+			Function forked successfully
+			Function forked successfully
+			Function forked successfully
+			Function forked successfully
+			Function forked successfully
+			Function forked successfully
+			Function forked successfully
+			Function forked successfully
+			Function forked successfully
+			Function forked successfully
+			Function forked successfully
+			Function forked successfully
+			Function forked successfully
+			Function forked successfully
+			Function forked successfully
+			Function forked successfully
+			Function forked successfully
+			Function forked successfully
+			Function forked successfully
+			Function forked successfully
+			Function forked successfully
+			Machine halting!
+
+			Ticks: total 19852, idle 0, system 11660, user 8192
+			Disk I/O: reads 0, writes 0
+			Console I/O: reads 0, writes 0
+			Paging: faults 0
+			Network I/O: packets received 0, sent 0
+
+			Cleaning up...
+
+	 TestCase 6:
+		
+		When this test case is executed, oneCarl's Jr Restaurant simulation programs are initiated.  The execution has been tested for various number of entities(Customer,order taker, waiter, cook and Manager)
+ in the simulations
+
+	Multiprogramming Testing:
+				When this test case is executed, Two Carl's Jr Restaurant simulation programs are initiated. These two simulations, are seen to execute, without 
+interrupting the orderly execution of one another. The execution has been tested for various number of entities(Customer,order taker, waiter, cook and Manager)
+ in the simulations
+
+VI. Discussion:
+
+	Experiment expectation:
+		Multiple instances of  'Carl's Junior Restaurant Simulation' is expected to run with proper synchronization. Mutual exclusion must be ensured 
+between individual threads and between individual processes. 
+
+
+	Experimental result:
+		The testcases that have been formulated for the various system calls, test every possible illegal operation that can be performed on them. From 
+the output we can see that the system calls can handle all of those conditions by printing error messages and exiting wherever appropriate. This tests the
+I and II parts of this project. For Part-III, we ran one instance of Carl's Jr Restaurant simulation as a user program. The multi-threaded program handled
+all possible illegal conditions. Mutual exclusion and scheduling is maintained between the threads and race conditions have been eliminated. The 
+simulation has been tested for different values of -rs and with different number of employees and it has seen to be robust. To complete the test on 
+part-III, we ran two Carl's Jr simulation programs, and both of them were observed to run without interrupting the flow of another.	Thus, the expected 
+experimental result was obtained.
+
+
+
+
+VII. Miscellaneous:
+
+	Simulation is not working for any of the rs values. Please run without rs values.

@@ -1,0 +1,38 @@
+
+#include "synch.h"
+
+
+void Customer(int CustomerID);
+void OrderTaker(int OrderTakerID);
+
+enum WorkerStatus { FREE =0, BUSY, WAITING};
+
+
+/* Bunch of data related to OrderTaker */
+struct OrderTaker_t {
+    int CustLineLen;
+    // Lock, CV and Monitor Variables that all OTs' share.
+    Lock *OrderTakerLock;
+    /* OrderTaker line CV */
+    Condition *OrderTakerCV;
+    Condition *OrderTakerWaitCV;
+    int currentToken;
+    /* OrderTaker break CV */
+    Condition *OrderTakerBreakCV;
+
+    WorkerStatus *OTStatus;
+
+};
+typedef struct OrderTaker_t OrderTakers;
+OrderTakers OT[MAX_OT];
+
+void OrderTakers_init(OrderTakers *OT )
+{
+    OT->CustLineLen = 0;
+    OT->OrderTakerCV = new Condition("OrderTakerCV");
+    OT->OrderTakerLock = new Lock("OrderTakerLock");
+    OT->OrderTakerWaitCV = new Condition("OrderTakerWaitCV");
+    OT->OrderTakerBreakCV = new Condition("OrderTakerBreakCV");
+    OT->currentToken = 0;
+    *(OT->OTStatus) = BUSY;
+}

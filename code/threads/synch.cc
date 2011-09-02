@@ -1,0 +1,333 @@
+// synch.cc
+//  Routines for synchronizing threads.  Three kinds of
+//  synchronization routines are defined here: semaphores, locks
+//      and condition variables (the implementation of the last two
+//  are left to the reader).
+//
+// Any implementation of a synchronization routine needs some
+// primitive atomic operation.  We assume Nachos is running on
+// a uniprocessor, and thus atomicity can be provided by
+// turning off interrupts.  While interrupts are disabled, no
+// context switch can occur, and thus the current thread is guaranteed
+// to hold the CPU throughout, until interrupts are reenabled.
+//
+// Because some of these routines might be called with interrupts
+// already disabled (Semaphore::V for one), instead of turning
+// on interrupts at the end of the atomic operation, we always simply
+// re-set the interrupt state back to its original value (whether
+// that be disabled or enabled).
+//
+// Copyright (c) 1992-1993 The Regents of the University of California.
+// All rights reserved.  See copyright.h for copyright notice and limitation
+// of liability and disclaimer of warranty provisions.
+
+#include "copyright.h"
+#include "synch.h"
+#include "system.h"
+#include "thread.h"
+#include "scheduler.h"
+//----------------------------------------------------------------------
+// Semaphore::Semaphore
+//  Initialize a semaphore, so that it can be used for synchronization.
+//
+//  "debugName" is an arbitrary name, useful for debugging.
+//  "initialValue" is the initial value of the semaphore.
+//----------------------------------------------------------------------
+
+Semaphore::Semaphore(char* debugName, int initialValue)
+{
+    name = debugName;
+    value = initialValue;
+    queue = new List;
+}
+
+//----------------------------------------------------------------------
+// Semaphore::Semaphore
+//  De-allocate semaphore, when no longer needed.  Assume no one
+//  is still waiting on the semaphore!
+//----------------------------------------------------------------------
+
+Semaphore::~Semaphore()
+{
+    delete queue;
+}
+
+//----------------------------------------------------------------------
+// Semaphore::P
+//  Wait until semaphore value > 0, then decrement.  Checking the
+//  value and decrementing must be done atomically, so we
+//  need to disable interrupts before checking the value.
+//
+//  Note that Thread::Sleep assumes that interrupts are disabled
+//  when it is called.
+//----------------------------------------------------------------------
+
+void
+Semaphore::P()
+{
+    IntStatus oldLevel = interrupt->SetLevel(IntOff);   // disable interrupts
+
+    while (value == 0) {            // semaphore not available
+    queue->Append((void *)currentThread);   // so go to sleep
+    currentThread->Sleep();
+    }
+    value--;                    // semaphore available,
+                        // consume its value
+
+    (void) interrupt->SetLevel(oldLevel);   // re-enable interrupts
+}
+
+//----------------------------------------------------------------------
+// Semaphore::V
+//  Increment semaphore value, waking up a waiter if necessary.
+//  As with P(), this operation must be atomic, so we need to disable
+//  interrupts.  Scheduler::ReadyToRun() assumes that threads
+//  are disabled when it is called.
+//----------------------------------------------------------------------
+
+void
+Semaphore::V()
+{
+    Thread *thread;
+    IntStatus oldLevel = interrupt->SetLevel(IntOff);
+
+    thread = (Thread *)queue->Remove();
+    if (thread != NULL)    // make thread ready, consuming the V immediately
+    scheduler->ReadyToRun(thread);
+    value++;
+    (void) interrupt->SetLevel(oldLevel);
+}
+
+// Dummy functions -- so we can compile our later assignments
+// Note -- without a correct implementation of Condition::Wait(),
+// the test case in the network assignment won't work!
+//----------------------------------------------------------------------
+// Condition::Condition
+//  Initialize a Condition, so that it can be used for synchronization.
+//
+//  "debugName" is an arbitrary name, useful for debugging.
+//  "initialValue" is the initial value of the semaphore.
+//----------------------------------------------------------------------
+
+Condition::Condition(char* debugName)
+{
+#ifdef CHANGED
+ name = debugName;
+ waitingLock = NULL;
+ queue = new List;
+#endif
+}
+
+//----------------------------------------------------------------------
+// Condition::~Condition
+//  Remove the CV waiting in the queue, when no longer needed. Assume no one
+//  is still waiting on the CV!
+//----------------------------------------------------------------------
+
+Condition::~Condition()
+{
+#ifdef CHANGED
+    delete queue;
+#endif
+}
+
+//----------------------------------------------------------------------
+// Condition::Wait
+//  Put the current thread to sleep while waiting on some condition
+//
+//  Note that Thread::Sleep assumes that interrupts are disabled
+//  when it is called.
+// Input Parameters : Pointer to the lock which needs to wait
+// Return Parameters : Nothing, void.
+//----------------------------------------------------------------------
+
+void Condition::Wait(Lock* conditionLock)
+{
+#ifdef CHANGED
+    //Disable interrupts
+    IntStatus oldLevel = interrupt->SetLevel(IntOff);
+
+    // Is the lock valid one? (OS protection)
+    if(conditionLock == NULL)
+        {
+          printf("Invalid lock!! Wait failed for CV %s", name);
+          // re-enable interrupts
+          (void) interrupt->SetLevel(oldLevel);
+          return;
+        }
+    // Is this thread owns the lock?
+    // Thread A cannot put Thread B to wait()
+    if(!conditionLock->isHeldByCurrentThread())
+        {  //Invalid operation, restore interrupts and return.
+         printf("Lock not held by thread, Wait failed for CV %s", name);
+         (void) interrupt->SetLevel(oldLevel);
+         return;
+        }
+    //Is this the first thread calling the wait?
+    if ( waitingLock == NULL)
+        {
+         //First thread to call wait; Save the lock
+         waitingLock = conditionLock;
+        }
+    //Is input lock matches the saved lock?
+    if(waitingLock!=conditionLock)
+        {
+         //Locks must matach; Error state
+         printf("Locks must match, Wait failed for CV %s", name);
+         (void) interrupt->SetLevel(oldLevel);
+         return;
+        }
+     //Everything is OK to be waiter
+     //Add thread to condition wait queue
+    queue->Append((void*) currentThread);
+    conditionLock->Release();
+    currentThread->Sleep();
+    //Reenter the Monitor variables
+    conditionLock->Acquire();
+
+    // re-enable interrupts
+    (void) interrupt->SetLevel(oldLevel);
+#endif
+}/* end of Wait()*/
+
+//----------------------------------------------------------------------
+// Condition::Signal
+//  Wake up "ONE" sleeping thread waiting on the given input lock
+//
+// Input Parameters : Pointer to the lock which needs to be waken-up
+// Return Parameters : Nothing, void.
+//----------------------------------------------------------------------
+
+void Condition::Signal(Lock* conditionLock)
+{
+#ifdef CHANGED
+    Thread *thread;
+    //Disable interrupts
+    IntStatus oldLevel = interrupt->SetLevel(IntOff);
+
+    // Is the lock valid one? (OS protection)
+    if(conditionLock == NULL)
+        {
+          printf("Invalid lock!! Wait failed for CV %s", name);
+          // re-enable interrupts
+          (void) interrupt->SetLevel(oldLevel);
+          return;
+        }
+    if((waitingLock != NULL) && (waitingLock!=conditionLock))
+        {
+         //Locks must matach; Error state
+         printf("Locks must match, Wait failed for CV %s", name);
+         (void) interrupt->SetLevel(oldLevel);
+         return;
+        }
+    //Are there any threads waiting in the queue?
+    if(queue->IsEmpty())
+        {//silent exit, no error message to application
+         (void) interrupt->SetLevel(oldLevel);
+         return;
+        }
+    //We know there are threads waiting in the queue
+    //Wakeup one waiter
+    //Remove one thread from Condition Wait queue
+    thread = (Thread *)queue->Remove();
+    scheduler->ReadyToRun(thread);
+
+    // Are there any more threads waiting?
+    if(queue->IsEmpty())
+        {
+         waitingLock = NULL;
+        }
+    // re-enable interrupts
+    (void) interrupt->SetLevel(oldLevel);
+#endif
+}
+//----------------------------------------------------------------------
+// Condition::Broadcast
+//  Wake up "ALL" sleeping thread waiting on the given input lock
+//
+// We assume that Condition::Signal checks that input lock matches
+// with the waitingLock
+// Input Parameters : Pointer to the lock which needs to waken-up
+// Return Parameters : Nothing, void.
+//----------------------------------------------------------------------
+
+void Condition::Broadcast(Lock* conditionLock)
+{
+#ifdef CHANGED
+    // while there are threads
+    while(!queue->IsEmpty())
+    {
+      this->Signal(conditionLock);
+    }
+#endif
+}
+
+
+Lock::Lock(char* debugName) {
+name=debugName;
+#ifdef CHANGED
+lockStatus=true; // lock is free
+owner=NULL;
+waitList= new List();
+#endif
+}
+Lock::~Lock() {}
+
+#ifdef CHANGED
+bool Lock::isHeldByCurrentThread() {
+return (currentThread==owner);
+
+}
+#endif
+
+void Lock::Acquire() {
+#ifdef CHANGED
+IntStatus oldLevel= interrupt->SetLevel(IntOff);  //disable interrupts
+if((this->isHeldByCurrentThread())>0)             //check if the thread is trying to acquire a lock that it already holds
+{
+   printf("I already own the lock");
+  (void) interrupt->SetLevel(oldLevel);          //restore interrupts
+   return;
+}
+
+if(lockStatus==true)                       //lock is free
+{
+   lockStatus=false;                      // make lock busy
+   owner=currentThread;                   //making currentThread lock owner
+}
+else                                     //lock is busy
+{
+   waitList->Append((Thread *)currentThread);// add currentThread to wait list
+   currentThread->Sleep();
+}
+interrupt->SetLevel(oldLevel);                //restore interrupts
+#endif
+}
+
+
+
+void Lock::Release() {
+#ifdef CHANGED
+ IntStatus oldLevel=interrupt->SetLevel(IntOff);//disable interrupts
+ if(!(isHeldByCurrentThread()))                // check if currentThread owns the lock it wants to release
+ {
+    printf("Error-This thread is not the Lock owner");
+    interrupt->SetLevel(oldLevel);
+    return;
+ }
+ if(!(waitList->IsEmpty()))                    //check if any threads are waiting to acquire the lock
+ {
+    Thread *newThread=((Thread *)waitList->Remove());
+    scheduler->ReadyToRun((Thread *)newThread);//wake up the waiting thread
+    owner=newThread;
+  }
+
+  else{                                        //no one waiting
+     lockStatus=true;
+     owner=NULL;                             //free the lock
+     }
+
+  interrupt->SetLevel(oldLevel);            //restore interrupts
+#endif
+
+}

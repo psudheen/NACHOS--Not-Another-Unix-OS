@@ -18,6 +18,7 @@
 
 #include "copyright.h"
 #include "post.h"
+#include "system.h"
 
 extern "C" {
 	int bcopy(char *, char *, int);
@@ -237,14 +238,14 @@ PostOffice::PostalDelivery()
 	    printf("Putting mail into mailbox: ");
 	    PrintHeader(pktHdr, mailHdr);
         }
-
+   
 	// check that arriving message is legal!
 	ASSERT(0 <= mailHdr.to && mailHdr.to < numBoxes);
 	ASSERT(mailHdr.length <= MaxMailSize);
 
 	// put into mailbox
         boxes[mailHdr.to].Put(pktHdr, mailHdr, buffer + sizeof(MailHeader));
-    }
+    }  
 }
 
 //----------------------------------------------------------------------
@@ -281,7 +282,10 @@ PostOffice::Send(PacketHeader pktHdr, MailHeader mailHdr, char* data)
     // concatenate MailHeader and data
     bcopy((char *) &mailHdr, buffer, sizeof(MailHeader));
     bcopy(data, buffer + sizeof(MailHeader), mailHdr.length);
-
+		for(int i=0;i<1200;i++)
+		{
+			//donothing
+		}
     sendLock->Acquire();   		// only one message can be sent
 					// to the network at any one time
     bool success = network->Send(pktHdr, buffer);
@@ -348,3 +352,66 @@ PostOffice::PacketSent()
     messageSent->V();
 }
 
+
+bool
+PostOffice::Send1(PacketHeader pktHdr, MailHeader mailHdr, char* data)
+{
+    char* buffer = new char[MaxPacketSize];	// space to hold concatenated
+		char Delimiter=';';
+    if (DebugIsEnabled('n')) {
+			printf("Post send: ");
+			PrintHeader(pktHdr, mailHdr);
+    }
+
+    ASSERT(mailHdr.length <= MaxMailSize);
+    ASSERT(0 <= mailHdr.to && mailHdr.to < numBoxes);
+    
+    // fill in pktHdr, for the Network layer
+   // pktHdr.from = netAddr;
+    pktHdr.length = mailHdr.length + sizeof(MailHeader);
+
+    // concatenate MailHeader and data
+    bcopy((char *) &mailHdr, buffer, sizeof(MailHeader));
+    bcopy(data, buffer + sizeof(MailHeader), mailHdr.length);
+		
+	
+			//printf("Sending msg %s from Client Id %d\n",data,myClientID);
+			char *myMsg=new char[10];
+			
+			char *myData=strtok(data,";");
+			char *temp=strtok(NULL,";");
+			int msgNum=atoi(temp);
+
+			if(!(pktHdr.from==51))          /*if u are sending ack then do not append to the sent messages queue*/
+			{
+				//Add to Q
+				pktHdr.from=myClientID;
+				//msgQLock->Acquire();
+				if(!(strcmp(myData,"ack")==0) )
+				{
+					sprintf(myMsg,"%d%c%d",msgNum,Delimiter,pktHdr.to);
+					MsgQ->Append((void *)myMsg);
+				}
+				//msgQLock->Release();
+			}
+			else
+			{
+				 pktHdr.from=myClientID;
+			}
+		//End Extra credit code
+		
+		for(int i=0;i<1000;i++)
+		{
+			//do nothing
+		}
+    sendLock->Acquire();   		// only one message can be sent
+					// to the network at any one time
+    bool success = network->Send(pktHdr, buffer);
+    messageSent->P();			// wait for interrupt to tell us
+					// ok to send the next message
+    sendLock->Release();
+
+    delete [] buffer;			// we've sent the message, so
+					// we can delete our buffer
+    return success;
+}

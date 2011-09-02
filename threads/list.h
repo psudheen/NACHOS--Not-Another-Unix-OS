@@ -56,7 +56,13 @@ class List {
 
     // Routines to put/get items on/off list in order (sorted by key)
     void SortedInsert(void *item, int64_t sortKey);	// Put item into list
+		void SortedInsert1(void *item, unsigned long int sortKey);	// Put item into list
     void *SortedRemove(int64_t *keyPtr); 	  	// Remove first item from list
+				//Added by Pramod
+		ListElement *GetFirstElement() 
+		{
+			return first;
+		}
 
   private:
     ListElement *first;  	// Head of the list, NULL if list is empty

@@ -1,10 +1,10 @@
-// system.h 
+
 //	All global variables used in Nachos are defined here.
 //
 // Copyright (c) 1992-1993 The Regents of the University of California.
 // All rights reserved.  See copyright.h for copyright notice and limitation 
 // of liability and disclaimer of warranty provisions.
-
+    
 #ifndef SYSTEM_H
 #define SYSTEM_H
 
@@ -51,9 +51,16 @@ extern SynchDisk   *synchDisk;
 #ifdef NETWORK
 #include "post.h"
 extern PostOffice* postOffice;
-extern int ClientID;
-extern int ServerID;
+extern Lock *mailBoxLock;
+extern int nextMailBoxNo;
 extern int netname;
+extern void KernelFn();
+extern void KernelFn2();
+extern List *MsgQ;
+extern bool lostPacket;
+extern Lock *msgQLock;
+extern int myClientID;
+extern int extracredit;
 #endif
 
 //#include "../userprog/addrspace.h"
@@ -75,42 +82,6 @@ extern BitMap    *PhyMemBitMap;
 extern Lock *pageTableLock[MAX_POSSIBLE_LOCKS];
 extern Lock *bitMapLock;
 extern int ActiveNoOfProcess;
-extern int currentTLB;
-extern int fifo_index;
-extern Lock *offsetLock;
-extern Lock *tlbLock;
-extern Lock *SwapFileLock;
-extern OpenFile *SwapFile;
-extern BitMap *SwapBitMap;
-extern Lock* swaplocLock;
-extern Lock* locLock;
-extern List *fifo;
-extern Lock* fifoLock;
-extern int dummyfifo[1000];
-extern int dummyfifoCnt;
-extern int rplacementPol;
-// class _TranslationEntry {
-  // public:
-    // int virtualPage;    // The page number in virtual memory.
-    // int physicalPage;   // The page number in real memory (relative to the
-                        // //  start of "mainMemory"
-    // bool valid;         // If this bit is set, the translation is ignored.
-                        // // (In other words, the entry hasn't been initialized.)
-    // bool readOnly;      // If this bit is set, the user program is not allowed
-                        // // to modify the contents of the page.
-    // bool use;           // This bit is set by the hardware every time the
-                        // // page is referenced or modified.
-    // bool dirty;         // This bit is set by the hardware every time the
-                        // // page is modified.
-		// int location;       // 0 - In exectable,1 - In swap file and  2 - niether
-    // int ProcID;         // Process ID for finding VPN
-    // int SwapLocation;   // To track where to swap the file
-		// int file_offset;
-// };
-
-extern _TranslationEntry *ipt;
-extern Lock *iptlock;
-
 #endif
 
 #endif // SYSTEM_H

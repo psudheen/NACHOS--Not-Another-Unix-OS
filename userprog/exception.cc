@@ -11,7 +11,7 @@
 //	"Halt".
 //
 //	exceptions -- The user code does something that the CPU can't handle.
-//	For instance, accessing memory that doesn't exist, arithmetic errors,
+//	For instance, accessing memory that doesn't exist, arithmetic errors ,
 //	etc.  
 //
 //	Interrupts (which can also cause control to transfer from user
@@ -33,22 +33,100 @@
 #include <string.h>
 #include "addrspace.h"
 
-extern "C" { int bzero(char *, int); };
-
 #define MAXADDR 1048576
-#define MAXLOCKS 256
-#define MAXCVS 256
-#define MAXMV 256
+#define MAXLOCKS 1000
+#define MAXCVS 1000
+#define MAXLOCKS 1000
+#define MAXCV 1000
+#define MAXMV 2000 
+
+
 using namespace std;
 Lock *TblUpdateLock =new Lock("TblUpdateLock");
-void HandlePageFault(int vAdd);
-int getIPTindex(int vpn);
-void updateTLB(int ppn);
-int loadPageIntoIPT(int vpn);
-int evictApage(int vpn);
-int evictApage1(int vpn);
-int fifofn();
 
+void networkThread(int myID);
+unsigned long int getTheTimeStamp();
+
+typedef struct mailBox_t
+{
+	int MailBoxNo;
+	unsigned long int TimeStamp;
+};
+
+typedef struct LastTimeStampTable_t
+{
+	unsigned long int TimeStamp;
+};
+
+//Project 3 code start
+#define INVALID 	-100
+
+enum Status{BUSY=0,FREE,ACTIVE,VOID};
+
+typedef struct SvrLockData_t
+{
+	int IsOkToDestroy;
+	int UsageCntr;
+	char* LockName;
+	int LockOwner;
+	int LockThreadID;
+	int Status;
+};
+
+typedef struct SvrCVData_t
+{
+	int IsOkToDestroy;
+	int UsageCntr;
+	char* CVName;
+	int CVOwner;
+	int CVThreadID;
+	int Status;
+};
+
+typedef struct SvrMVData_t
+{
+	int IsOkToDestroy;
+	int UsageCntr;
+	char* MVName;
+	int MVValue;
+	int MVOwner;
+	int MVThreadID;
+	int Status;
+};
+// Declaration of all functions
+bool isHeldByCurrentThread(int LockID,int ClientID,int ThreadID,SvrLockData_t *SvrLocks);
+void RespondToClient(char *SrvBuffer, int ClientID, int ThreadID,int ntThreadMailboxID);
+void initialize(SvrLockData_t *SvrLocks, SvrCVData_t *SvrCV,SvrMVData_t  *SvrMV, int *WaitingLockInCV, List **ServerCVWaitQ, List **SvrLockWaitQ,int *SrvLockCounter, int *SrvCVCounter, int *SrvMVCounter);
+void DecodeMsg(char *buffer, SvrLockData_t *SvrLocks, SvrCVData_t *SvrCV,SvrMVData_t  *SvrMV, int *WaitingLockInCV, List **ServerCVWaitQ, List **SvrLockWaitQ, int *SrvLockCounter, int *SrvCVCounter, int *SrvMVCounter,int ntThreadMailboxID);
+int ServerCreateLock(int ClientID, int ThreadID,char *LockName, SvrLockData_t *SvrLocks, SvrCVData_t *SvrCV,SvrMVData_t  *SvrMV, int *WaitingLockInCV, List **ServerCVWaitQ, List **SvrLockWaitQ, int *SrvLockCounter, int *SrvCVCounter, int *SrvMVCounter,int ntThreadMailboxID);
+int ServerAcquireLock(int ClientID, int ThreadID,int LockID,SvrLockData_t *SvrLocks, SvrCVData_t *SvrCV,SvrMVData_t  *SvrMV, int *WaitingLockInCV, List **ServerCVWaitQ, List **SvrLockWaitQ, int *SrvLockCounter, int *SrvCVCounter, int *SrvMVCounter,int ntThreadMailboxID);
+int ServerReleaseLock(int ClientID, int ThreadID,int LockID,SvrLockData_t *SvrLocks, SvrCVData_t *SvrCV,SvrMVData_t  *SvrMV, int *WaitingLockInCV, List **ServerCVWaitQ, List **SvrLockWaitQ, int *SrvLockCounter, int *SrvCVCounter, int *SrvMVCounter,int ntThreadMailboxID);
+int ServerDestroyLock(int ClientID, int ThreadID,int LockID,SvrLockData_t *SvrLocks, SvrCVData_t *SvrCV,SvrMVData_t  *SvrMV, int *WaitingLockInCV, List **ServerCVWaitQ, List **SvrLockWaitQ, int *SrvLockCounter, int *SrvCVCounter, int *SrvMVCounter,int ntThreadMailboxID);
+int ServerCreateCondition(int ClientID, int ThreadID,char *CvName,SvrLockData_t *SvrLocks, SvrCVData_t *SvrCV,SvrMVData_t  *SvrMV, int *WaitingLockInCV, List **ServerCVWaitQ, List **SvrLockWaitQ, int *SrvLockCounter, int *SrvCVCounter, int *SrvMVCounter,int ntThreadMailboxID);
+int ServerWait(int ClientID, int ThreadID,int LockID,int CvID,SvrLockData_t *SvrLocks, SvrCVData_t *SvrCV,SvrMVData_t  *SvrMV, int *WaitingLockInCV, List **ServerCVWaitQ, List **SvrLockWaitQ, int *SrvLockCounter, int *SrvCVCounter, int *SrvMVCounter,int ntThreadMailboxID);
+int ServerDestroyCondition(int ClientID, int ThreadID,int CvID,SvrLockData_t *SvrLocks, SvrCVData_t *SvrCV,SvrMVData_t  *SvrMV, int *WaitingLockInCV, List **ServerCVWaitQ, List **SvrLockWaitQ, int *SrvLockCounter, int *SrvCVCounter, int *SrvMVCounter,int ntThreadMailboxID);
+int ServerSignal(int ClientID, int ThreadID,int LockID,int CvID,SvrLockData_t *SvrLocks, SvrCVData_t *SvrCV,SvrMVData_t  *SvrMV, int *WaitingLockInCV, List **ServerCVWaitQ, List **SvrLockWaitQ, int *SrvLockCounter, int *SrvCVCounter, int *SrvMVCounter,int ntThreadMailboxID);
+int ServerBroadcast(int ClientID, int ThreadID,int LockID,int CvID,SvrLockData_t *SvrLocks, SvrCVData_t *SvrCV,SvrMVData_t  *SvrMV, int *WaitingLockInCV, List **ServerCVWaitQ, List **SvrLockWaitQ, int *SrvLockCounter, int *SrvCVCounter, int *SrvMVCounter,int ntThreadMailboxID);
+int ServerCreateMV(int ClientID, int ThreadID,char *MVName,SvrLockData_t *SvrLocks, SvrCVData_t *SvrCV,SvrMVData_t  *SvrMV, int *WaitingLockInCV, List **ServerCVWaitQ, List **SvrLockWaitQ, int *SrvLockCounter, int *SrvCVCounter, int *SrvMVCounter,int ntThreadMailboxID);
+int ServerDestroyMV(int ClientID, int ThreadID,int MVID,SvrLockData_t *SvrLocks, SvrCVData_t *SvrCV,SvrMVData_t  *SvrMV, int *WaitingLockInCV, List **ServerCVWaitQ, List **SvrLockWaitQ, int *SrvLockCounter, int *SrvCVCounter, int *SrvMVCounter,int ntThreadMailboxID);
+int ServerSetMV(int ClientID, int ThreadID,int MVID, int MVValue,SvrLockData_t *SvrLocks, SvrCVData_t *SvrCV,SvrMVData_t  *SvrMV, int *WaitingLockInCV, List **ServerCVWaitQ, List **SvrLockWaitQ, int *SrvLockCounter, int *SrvCVCounter, int *SrvMVCounter,int ntThreadMailboxID);
+int ServerGetMV(int ClientID, int ThreadID,int MVID,SvrLockData_t *SvrLocks, SvrCVData_t *SvrCV,SvrMVData_t  *SvrMV, int *WaitingLockInCV, List **ServerCVWaitQ, List **SvrLockWaitQ, int *SrvLockCounter, int *SrvCVCounter, int *SrvMVCounter,int ntThreadMailboxID);
+const int SUCCESS	= 1;
+const int FAILURE	=-1;
+
+
+//Global Variables for the server Kernel
+int SignalledClientID=-1;
+bool HideMessage;
+int ReleaseCalledFromWait;
+
+//Project 3 code end
+
+
+//Project 4 code Start
+
+Lock *ntThreadLock;
+//Project 4 code end
 
 
 int copyin(unsigned int vaddr, int len, char *buf) {
@@ -112,9 +190,9 @@ void Create_Syscall(unsigned int vaddr, int len) {
     if (!buf) return;
 
     if( copyin(vaddr,len,buf) == -1 ) {
-	printf("%s","Bad pointer passed to Create\n");
-	delete buf;
-	return;
+		printf("%s","Bad pointer passed to Create\n");
+		delete buf;
+		return;
     }
 
     buf[len]='\0';
@@ -253,15 +331,416 @@ void Close_Syscall(int fd) {
     }
 }
 
-
+//Code added for Project 2
 
 int CreateLock_Syscall(unsigned int vaddr, int len)
 {
+
     // Create a lock  with the name in the user buffer pointed to by
     // vaddr.  The lock name is at most MAXFILENAME chars long.  If
     // the lock is created successfully, it is put in the address
     // space's lock table and an id (lock id) returned that can find the lock
     // later.  If there are any errors, -1 is returned.
+	if((len<=0)||(len>MAXFILENAME))
+	{
+		printf("Invalid size for Lock name\n");
+		return -1;
+	}
+    char *buf = new char[len+1];	// Kernel buffer to put the name in
+    Lock *l;			// The new lock object
+    int id;				// The lockid
+
+	if((vaddr<0)||(vaddr>MAXADDR))
+	 {
+	 	printf("Invalid Virtual Address\n");
+		return -1;
+	 }
+
+	if((vaddr+len)>MAXADDR)
+    {
+       printf("%s","ERROR: Address length exceeded the total size\n");
+       return -1;
+    }
+    if (!buf) {
+	printf("%s","Can't allocate kernel buffer in CreateLock\n");
+	return -1;
+    }
+
+    if( copyin(vaddr,len,buf) == -1 ) {
+	printf("%s","Bad pointer passed to CreateLock\n");
+	delete[] buf;
+	return -1;
+    }
+
+    buf[len]='\0';
+#ifdef NETWORK
+		//printf("Inside NW Cl\n");
+		PacketHeader outPktHdr, inPktHdr;
+		MailHeader outMailHdr, inMailHdr;
+		char *data=new char[100];
+		char buffer[MaxMailSize];
+		outPktHdr.to = netname;
+		outMailHdr.to = (currentThread->getMailboxNO()+1);
+		outMailHdr.from = currentThread->getMailboxNO();
+		//Lock Name should come from User Program
+		// request_type;lock name
+		sprintf(data,"%d;%s",SC_CreateLock,buf);
+		DEBUG('q', "Data:%s\n",data);
+		outMailHdr.length = strlen(data)+1;
+		DEBUG('q',"Sending \"%s\" to %d client and %d mailbox\n",data,netname,outMailHdr.to);
+		if(!postOffice->Send(outPktHdr,outMailHdr,data)){
+			printf("CreateLock Send failed. You must have Server nachos running. Nachos Terminating\n");
+			interrupt->Halt();
+		}
+		postOffice->Receive(currentThread->getMailboxNO(), &inPktHdr, &inMailHdr, buffer);
+		DEBUG('q',"UPThread %d Recieved \"%s\" from %d client and %d mailbox\n",currentThread->getMailboxNO(),buffer,inPktHdr.from,inMailHdr.from);
+		fflush(stdout);
+		delete []buf;
+		delete []data;
+		return atoi(buffer);
+	#endif
+}
+   
+void DestroyLock_Syscall(int LockPos)
+{
+	if((LockPos<0)||(LockPos>MAXLOCKS))
+	{
+		printf("ERROR: Invalid Lock Index\n");
+		return;
+	}
+    // Destroy the lock associated with id LockPos.  WITH error reporting.
+#ifdef NETWORK
+		//printf("Inside destry lock.............\n");
+		PacketHeader outPktHdr, inPktHdr;
+		MailHeader outMailHdr, inMailHdr;
+		char *data=new char[100];
+		char buffer[MaxMailSize];
+		outPktHdr.to = netname;
+		outMailHdr.to = (currentThread->getMailboxNO()+1);
+		outMailHdr.from = currentThread->getMailboxNO();
+		//Lock Name should come from User Program
+		// request_type;lock id; client ID, threadID=0
+		sprintf(data,"%d;%d",SC_DestroyLock,LockPos); 
+		DEBUG('q',"Data:%s\n",data);
+		outMailHdr.length = strlen(data)+1;
+		DEBUG('q',"Sending \"%s\" to %d\n",data,netname);
+		if(!postOffice->Send(outPktHdr,outMailHdr,data)){
+			printf("DestroyLock Send failed. You must have Server nachos running. Nachos Terminating\n");
+			interrupt->Halt();
+		}
+		postOffice->Receive(currentThread->getMailboxNO(), &inPktHdr, &inMailHdr, buffer);
+		DEBUG('q',"Recieved \"%s\" from %d\n",data,inPktHdr.from);
+		fflush(stdout);
+		delete []data;
+		return ;
+	#endif
+}
+
+
+void AcquireLock_Syscall(int LockPos)
+{
+	if((LockPos<0)||(LockPos>MAXLOCKS))
+	{
+		printf("ERROR: Invalid Lock Index\n");
+		return;
+	}
+    // Acquire the lock associated with id LockPos.  WITH error reporting
+		#ifdef NETWORK
+		//printf("Inside NW Cl\n");
+		PacketHeader outPktHdr, inPktHdr;
+		MailHeader outMailHdr, inMailHdr;
+		char *data=new char[100];
+		char buffer[MaxMailSize];
+		outPktHdr.to = netname;
+		outMailHdr.to = (currentThread->getMailboxNO()+1);
+		outMailHdr.from = currentThread->getMailboxNO();
+		//Lock ID should come from User Program
+		// request_type;lock ID; client ID, threadID=0
+		sprintf(data,"%d;%d",SC_Acquire,LockPos);
+		//printf("Data:%s\n",data);
+		outMailHdr.length = strlen(data)+1;
+		DEBUG('q',"Sending \"%s\" to %d\n",data,netname);
+		if(!postOffice->Send(outPktHdr,outMailHdr,data)){
+			printf("AcquireLock Send failed. You must have Server nachos running. Nachos Terminating\n");
+			interrupt->Halt();
+		}
+		postOffice->Receive(currentThread->getMailboxNO(), &inPktHdr, &inMailHdr, buffer);
+		DEBUG('q',"Recieved \"%s\" from %d\n",data,inPktHdr.from);
+		fflush(stdout);
+		delete []data;
+		return;
+		#endif
+
+}
+
+  
+void ReleaseLock_Syscall(int LockPos)
+{
+	if((LockPos<0)||(LockPos>MAXLOCKS))
+	{
+		printf("ERROR: Invalid Lock Index\n");
+		return;
+	}
+     // Release the lock associated with id LockPos.  WITH error reporting
+		 		#ifdef NETWORK
+		//printf("Inside NW Cl\n");
+		PacketHeader outPktHdr, inPktHdr;
+		MailHeader outMailHdr, inMailHdr;
+		char *data=new char[100];
+		char buffer[MaxMailSize];
+		outPktHdr.to = netname;
+		outMailHdr.to = (currentThread->getMailboxNO()+1);
+		outMailHdr.from = currentThread->getMailboxNO();
+		//Lock ID should come from User Program		
+		// request_type;lock ID; client ID, threadID=0
+		sprintf(data,"%d;%d",SC_Release,LockPos);
+		//printf("Data:%s\n",data);
+		outMailHdr.length = strlen(data)+1;
+		DEBUG('q',"Sending \"%s\" to %d\n",data,netname);
+		if(!postOffice->Send(outPktHdr,outMailHdr,data)){
+			printf("AcquireLock Send failed. You must have Server nachos running. Nachos Terminating\n");
+			interrupt->Halt();
+		}
+		postOffice->Receive(currentThread->getMailboxNO(), &inPktHdr, &inMailHdr, buffer);
+		DEBUG('q',"Recieved \"%s\" from %d\n",data,inPktHdr.from);
+		fflush(stdout);
+		delete []data;
+		return;
+	#endif
+
+}
+
+
+int CreateCondition_Syscall(unsigned int vaddr, int len)
+{
+    // Create a condition  with the name in the user buffer pointed to by
+    // vaddr.  The condition name is at most MAXFILENAME chars long.  If
+    // the condition is created successfully, it is put in the address
+    // space's lock table and an id (condition variable id) returned that can find the lock
+    // later.  If there are any errors, -1 is returned.
+	if((len<=0)||(len>MAXFILENAME))
+	{
+		printf("Invalid size for Condition name\n");
+		return -1;
+	}
+    char *buf = new char[len+1];	// Kernel buffer to put the name in
+    Condition *c;			// The new lock object
+    int id;				// The lockid
+	if((vaddr<0)||(vaddr>MAXADDR))
+	 {
+	 	printf("Invalid Virtual Address\n");
+		return -1;
+	 }
+
+	if((vaddr+len)>MAXADDR)
+    {
+       printf("%s","ERROR: Address length exceeded the total size\n");
+       return -1;
+    }
+
+    if (!buf) {
+	printf("%s","Can't allocate kernel buffer in CreateCondition\n");
+	return -1;
+    }
+
+    if( copyin(vaddr,len,buf) == -1 ) {
+	printf("%s","Bad pointer passed to CreateCondition\n");
+	delete[] buf;
+	return -1;
+    }
+
+    buf[len]='\0';
+	#ifdef NETWORK
+		//printf("Inside NW Cl\n");
+		PacketHeader outPktHdr, inPktHdr;
+		MailHeader outMailHdr, inMailHdr;
+		char *data=new char[100];
+		char buffer[MaxMailSize];
+		outPktHdr.to = netname;
+		outMailHdr.to = (currentThread->getMailboxNO()+1);
+		outMailHdr.from = currentThread->getMailboxNO();
+		//Lock Name should come from User Program
+		sprintf(data,"%d;%s",SC_CreateCondition,buf);
+		DEBUG('q',"Data:%s\n",data);
+		outMailHdr.length = strlen(data)+1;
+		DEBUG('q',"Sending \"%s\" to %d client and %d mailbox\n",data,netname,outMailHdr.to);
+		if(!postOffice->Send(outPktHdr,outMailHdr,data)){
+			printf("CreateLock Send failed. You must have Server nachos running. Nachos Terminating\n");
+			interrupt->Halt();
+		}
+		postOffice->Receive(currentThread->getMailboxNO(), &inPktHdr, &inMailHdr, buffer);
+				DEBUG('q',"UPThread %d Recieved \"%s\" from %d client and %d mailbox\n",currentThread->getMailboxNO(),buffer,inPktHdr.from,inMailHdr.from);
+		fflush(stdout);
+		delete[] buf;
+		delete []data;
+		return atoi(buffer);
+	#endif
+ 
+}
+
+
+void DestroyCondition_Syscall(int ConditionPos)
+{
+    // Destroy the ConditionVariable associated with id ConditionPos.  WITH error reporting
+	if((ConditionPos<0)||(ConditionPos>MAXCVS))
+	{
+		printf("ERROR: Invalid CV Index\n");
+		return;
+	}
+		#ifdef NETWORK
+		//printf("Inside NW Cl\n");
+		PacketHeader outPktHdr, inPktHdr;
+		MailHeader outMailHdr, inMailHdr;
+		char *data=new char[100];
+		char buffer[MaxMailSize];
+		outPktHdr.to = netname;
+		outMailHdr.to = (currentThread->getMailboxNO()+1);
+		outMailHdr.from = currentThread->getMailboxNO();
+		//Lock Name should come from User Program
+		sprintf(data,"%d;%d",SC_DestroyCondition,ConditionPos);
+		DEBUG('q',"Data:%s\n",data);
+		outMailHdr.length = strlen(data)+1;
+		DEBUG('q',"Sending \"%s\" to %d\n",data,netname);
+		if(!postOffice->Send(outPktHdr,outMailHdr,data)){
+			printf("CreateLock Send failed. You must have Server nachos running. Nachos Terminating\n");
+			interrupt->Halt();
+		}
+		postOffice->Receive(currentThread->getMailboxNO(), &inPktHdr, &inMailHdr, buffer);
+		DEBUG('q',"Recieved \"%s\" from %d\n",data,inPktHdr.from);
+		fflush(stdout);
+		//delete[] buf;
+		delete []data;
+		return;
+		#endif
+}
+
+void Wait_Syscall(int ConditionPos,int LockPos)
+{
+	if((ConditionPos<0)||(ConditionPos>MAXCVS))
+	{
+		printf("ERROR: Invalid CV Index\n");
+		return;
+	}
+
+	if((LockPos<0)||(LockPos>MAXLOCKS))
+	{
+		printf("ERROR: Invalid Lock Index\n");
+		return;
+	}
+	#ifdef NETWORK
+		//printf("Inside NW Cl\n");
+		PacketHeader outPktHdr, inPktHdr;
+		MailHeader outMailHdr, inMailHdr;
+		char *data=new char[100];
+		char buffer[MaxMailSize];
+		outPktHdr.to = netname;
+		outMailHdr.to = (currentThread->getMailboxNO()+1);
+		outMailHdr.from = currentThread->getMailboxNO();
+		//Lock ID should come from User Program
+		sprintf(data,"%d;%d;%d",SC_Wait,LockPos,ConditionPos);
+		//printf("Data:%s\n",data);
+		outMailHdr.length = strlen(data)+1;
+		DEBUG('q',"Sending \"%s\" to %d\n",data,netname);
+		if(!postOffice->Send(outPktHdr,outMailHdr,data)){
+			printf("AcquireLock Send failed. You must have Server nachos running. Nachos Terminating\n");
+			interrupt->Halt();
+		}
+		postOffice->Receive(currentThread->getMailboxNO(), &inPktHdr, &inMailHdr, buffer);
+		DEBUG('q',"Recieved \"%s\" from %d\n",data,inPktHdr.from);
+		fflush(stdout);
+ 	delete []data;
+		return;
+	#endif
+
+
+}
+
+
+void Signal_Syscall(int ConditionPos,int LockPos)
+{
+		if((ConditionPos<0)||(ConditionPos>MAXCVS))
+	{
+		printf("ERROR: Invalid CV Index\n");
+		return;
+	}
+
+	if((LockPos<0)||(LockPos>MAXLOCKS))
+	{
+		printf("ERROR: Invalid Lock Index\n");
+		return;
+	}
+
+		#ifdef NETWORK
+		//printf("Inside NW Cl\n");
+		PacketHeader outPktHdr, inPktHdr;
+		MailHeader outMailHdr, inMailHdr;
+		char *data=new char[100];
+		char buffer[MaxMailSize];
+		outPktHdr.to = netname;
+		outMailHdr.to = (currentThread->getMailboxNO()+1);
+		outMailHdr.from = currentThread->getMailboxNO();
+		//Lock ID should come from User Program
+		sprintf(data,"%d;%d;%d",SC_Signal,LockPos,ConditionPos);
+		//printf("Data:%s\n",data);
+		outMailHdr.length = strlen(data)+1;
+		DEBUG('q',"Sending \"%s\" to %d\n",data,netname);
+		if(!postOffice->Send(outPktHdr,outMailHdr,data)){
+			printf("AcquireLock Send failed. You must have Server nachos running. Nachos Terminating\n");
+			interrupt->Halt();
+		}
+		postOffice->Receive(currentThread->getMailboxNO(), &inPktHdr, &inMailHdr, buffer);
+		DEBUG('q',"Recieved \"%s\" from %d\n",data,inPktHdr.from);
+		fflush(stdout);
+		delete []data;
+		return;
+	#endif
+
+}
+
+void Broadcast_Syscall(int ConditionPos,int LockPos)
+{
+		if((ConditionPos<0)||(ConditionPos>MAXCVS))
+	{
+		printf("ERROR: Invalid CV Index\n");
+		return;
+	}
+
+	if((LockPos<0)||(LockPos>MAXLOCKS))
+	{
+		printf("ERROR: Invalid Lock Index\n");
+		return;
+	}
+				#ifdef NETWORK
+		//printf("Inside NW Cl\n");
+		PacketHeader outPktHdr, inPktHdr;
+		MailHeader outMailHdr, inMailHdr;
+		char *data=new char[100];
+		char buffer[MaxMailSize];
+		outPktHdr.to = netname;
+		outMailHdr.to = (currentThread->getMailboxNO()+1);
+		outMailHdr.from = currentThread->getMailboxNO();
+		//Lock ID should come from User Program
+		sprintf(data,"%d;%d;%d",SC_Broadcast,LockPos,ConditionPos);
+		//printf("Data:%s\n",data);
+		outMailHdr.length = strlen(data)+1;
+		DEBUG('q',"Sending \"%s\" to %d\n",data,netname);
+		if(!postOffice->Send(outPktHdr,outMailHdr,data)){
+			printf("AcquireLock Send failed. You must have Server nachos running. Nachos Terminating\n");
+			interrupt->Halt();
+		}
+		postOffice->Receive(currentThread->getMailboxNO(), &inPktHdr, &inMailHdr, buffer);
+		DEBUG('q',"Recieved \"%s\" from %d\n",buffer,inPktHdr.from);
+		fflush(stdout);
+		delete []data;
+		return;
+	#endif
+
+}
+
+int CreateMV_Syscall(unsigned int vaddr, int len)
+{
+    // Create a MV  with the name in the user buffer pointed to by
+    // vaddr.  The MV name is at most MAXFILENAME chars long.  
 
 	if((len<=0)||(len>MAXFILENAME))
 	{
@@ -295,567 +774,154 @@ int CreateLock_Syscall(unsigned int vaddr, int len)
 		delete[] buf;
 		return -1;
 	}
+	buf[len]='\0';
 	#ifdef NETWORK
-		//printf("Inside NW Cl\n");
-		PacketHeader outPktHdr, inPktHdr;
-		MailHeader outMailHdr, inMailHdr;
-		char *data=new char[100];
-		char buffer[MaxMailSize];
-		outPktHdr.to = ServerID;
-		outMailHdr.to = 0;
-		outMailHdr.from = netname;
-		//Lock Name should come from User Program
-		// request_type;lock name; client ID, threadID=0
-		sprintf(data,"%d;%s;%d;%d",SC_CreateLock,buf,netname,0);
-		printf("Data:%s\n",data);
-		outMailHdr.length = strlen(data)+1;
-		printf("Sending \"%s\" to %d\n",data,ServerID);
-		if(!postOffice->Send(outPktHdr,outMailHdr,data)){
-			printf("CreateLock Send failed. You must have Server nachos running. Nachos Terminating\n");
-			interrupt->Halt();
-		}
-		postOffice->Receive(netname, &inPktHdr, &inMailHdr, buffer);
-		printf("Recieved \"%s\" from %d\n",data,inPktHdr.from);
-		fflush(stdout);
-		delete[] buf;
-		return atoi(buffer);
-	#else
-    buf[len]='\0';
-		printf("Lock Name:%s\n",buf);
-	//printf("Inside Cl\n");
-
-	pageTableLock[TotalProcessCount]->Acquire();
-    l = new Lock("CreateLock");
+	PacketHeader outPktHdr, inPktHdr;
+	MailHeader outMailHdr, inMailHdr;
+	char *data=new char[100];
+	char buffer[MaxMailSize];
+	outPktHdr.to = netname;
+	outMailHdr.to = (currentThread->getMailboxNO()+1);
+	outMailHdr.from = currentThread->getMailboxNO();
+	//Lock Name should come from User Program
+	// request_type;lock name; client ID, threadID=0
+	sprintf(data,"%d;%s;%d;%d",SC_CreateMV,buf,netname,0);
+	DEBUG('q',"Data:%s\n",data);
+	outMailHdr.length = strlen(data)+1;
+	DEBUG('q',"Sending \"%s\" to %d\n",data,netname);
+	if(!postOffice->Send(outPktHdr,outMailHdr,data)){
+		printf("CreateLock Send failed. You must have Server nachos running. Nachos Terminating\n");
+		interrupt->Halt();
+	}
+	postOffice->Receive(currentThread->getMailboxNO(), &inPktHdr, &inMailHdr, buffer);
+	DEBUG('q',"Recieved \"%s\" from %d\n",data,inPktHdr.from);
+	fflush(stdout);
 	delete[] buf;
-
-    if ( l )
-    {	  
-	    if ((id = currentThread->space->lockTable.Put(l)) == -1 )
-		{
-			delete l;
-			//no slots in the lock table
-			printf("unable to create Lock \n");
-		}
-		else
-		{
-		    LockUsuageCntr[id] = 0;
-		    pageTableLock[TotalProcessCount]->Release();
-			//printf("Lock created\n");
-			return id;
-		}
-    }
-    pageTableLock[TotalProcessCount]->Release();
-    return -1;
+	delete []data;
+	return atoi(buffer);
 	#endif
 }
    
-void DestroyLock_Syscall(int LockPos)
+void DestroyMV_Syscall(int MVID)
 {
 
-	if((LockPos<0)||(LockPos>MAXLOCKS))
+	if((MVID<0)||(MVID>MAXLOCKS))
 	{
 		printf("ERROR: Invalid Lock Index\n");
 		return;
 	}
-		#ifdef NETWORK
-		printf("Inside destry lock.............\n");
-		PacketHeader outPktHdr, inPktHdr;
-		MailHeader outMailHdr, inMailHdr;
-		char *data=new char[100];
-		char buffer[MaxMailSize];
-		outPktHdr.to = ServerID;
-		outMailHdr.to = 0;
-		outMailHdr.from = netname;
-		//Lock Name should come from User Program
-		// request_type;lock id; client ID, threadID=0
-		sprintf(data,"%d;%d;%d;%d",SC_DestroyLock,LockPos,netname,0); 
-		printf("Data:%s\n",data);
-		outMailHdr.length = strlen(data)+1;
-		printf("Sending \"%s\" to %d\n",data,ServerID);
-		if(!postOffice->Send(outPktHdr,outMailHdr,data)){
-			printf("DestroyLock Send failed. You must have Server nachos running. Nachos Terminating\n");
-			interrupt->Halt();
-		}
-		postOffice->Receive(netname, &inPktHdr, &inMailHdr, buffer);
-		printf("Recieved \"%s\" from %d\n",data,inPktHdr.from);
-		fflush(stdout);
-		//delete[] buf;
-		return ;
-	#else
-    // Destroy the lock associated with id LockPos.  WITH error reporting.
-    pageTableLock[TotalProcessCount]->Acquire();
-    Lock *l = (Lock*)currentThread->space->lockTable.Get(LockPos);
-	if(LockUsuageCntr[LockPos]==0)
-	{
-		if(l){
-		  delete l;
-		  currentThread->space->lockTable.Remove(LockPos);
-		  //printf("Lock Destroyed\n");
-		  }
-		 else
-			printf("ERROR:Destroy lock failed. Lock Index = %d!\n",LockPos);
-	}
-    else
-      printf("%s","ERROR:Lock still in use,Destroy lock failed!\n");
-    
-    pageTableLock[TotalProcessCount]->Release();
-		#endif
-}
-
-
-void AcquireLock_Syscall(int LockPos)
-{
-		#ifdef NETWORK
-		//printf("Inside NW Cl\n");
-		PacketHeader outPktHdr, inPktHdr;
-		MailHeader outMailHdr, inMailHdr;
-		char *data=new char[100];
-		char buffer[MaxMailSize];
-		outPktHdr.to = ServerID;
-		outMailHdr.to = 0;
-		outMailHdr.from = netname;
-		//Lock ID should come from User Program
-		// request_type;lock ID; client ID, threadID=0
-		sprintf(data,"%d;%d;%d;%d",SC_Acquire,LockPos,netname,0);
-		//printf("Data:%s\n",data);
-		outMailHdr.length = strlen(data)+1;
-		printf("Sending \"%s\" to %d\n",data,ServerID);
-		if(!postOffice->Send(outPktHdr,outMailHdr,data)){
-			printf("AcquireLock Send failed. You must have Server nachos running. Nachos Terminating\n");
-			interrupt->Halt();
-		}
-		postOffice->Receive(netname, &inPktHdr, &inMailHdr, buffer);
-		printf("Recieved \"%s\" from %d\n",data,inPktHdr.from);
-		fflush(stdout);
-		return;
-	#else
-	if((LockPos<0)||(LockPos>MAXLOCKS))
-	{
-		printf("ERROR: Invalid Lock Index\n");
-		return;
-	}
-
-    // Acquire the lock associated with id LockPos.  WITH error reporting
-    pageTableLock[TotalProcessCount]->Acquire();
-    Lock *l = (Lock*)currentThread->space->lockTable.Get(LockPos);
-	//printf("Lock:%d\n", (Lock*)currentThread->space->lockTable.Get(LockPos));
-    if(l){
-      l->Acquire();
-	  //printf("Lock Acquired\n");
-	  LockUsuageCntr[LockPos]++;
-	  }
-    else
-      printf("%s","ERROR:Acquire lock failed!\n");
-    pageTableLock[TotalProcessCount]->Release();
-		#endif
-}
-
-  
-void ReleaseLock_Syscall(int LockPos)
-{
-		#ifdef NETWORK
-		//printf("Inside NW Cl\n");
-		PacketHeader outPktHdr, inPktHdr;
-		MailHeader outMailHdr, inMailHdr;
-		char *data=new char[100];
-		char buffer[MaxMailSize];
-		outPktHdr.to = ServerID;
-		outMailHdr.to = 0;
-		outMailHdr.from = netname;
-		//Lock ID should come from User Program		
-		// request_type;lock ID; client ID, threadID=0
-		sprintf(data,"%d;%d;%d;%d",SC_Release,LockPos,netname,0);
-		//printf("Data:%s\n",data);
-		outMailHdr.length = strlen(data)+1;
-		printf("Sending \"%s\" to %d\n",data,ServerID);
-		if(!postOffice->Send(outPktHdr,outMailHdr,data)){
-			printf("AcquireLock Send failed. You must have Server nachos running. Nachos Terminating\n");
-			interrupt->Halt();
-		}
-		postOffice->Receive(netname, &inPktHdr, &inMailHdr, buffer);
-		printf("Recieved \"%s\" from %d\n",data,inPktHdr.from);
-		fflush(stdout);
-		return;
-	#else
-	if((LockPos<0)||(LockPos>MAXLOCKS))
-	{
-		printf("ERROR: Invalid Lock Index\n");
-		return;
-	}
-
-     // Release the lock associated with id LockPos.  WITH error reporting
-    pageTableLock[TotalProcessCount]->Acquire();
-    Lock *l = (Lock*)currentThread->space->lockTable.Get(LockPos);
-    if(l){
-	  if(LockUsuageCntr[LockPos]>0)
-		{
-		  l->Release();
-		  //printf("Lock Released\n");
-		  LockUsuageCntr[LockPos]--;
-		}
-	  else
-		{
-		  printf("%s","ERROR:Release lock failed!\n");
-		}
-	  }
-    else
-      printf("%s","ERROR:Release lock failed!\n");
-    pageTableLock[TotalProcessCount]->Release();
-		#endif
-}
-
-
-int CreateCondition_Syscall(unsigned int vaddr, int len)
-{
-    // Create a condition  with the name in the user buffer pointed to by
-    // vaddr.  The condition name is at most MAXFILENAME chars long.  If
-    // the condition is created successfully, it is put in the address
-    // space's lock table and an id (condition variable id) returned that can find the lock
-    // later.  If there are any errors, -1 is returned.
-
-	if((len<=0)||(len>MAXFILENAME))
-	{
-		printf("Invalid size for Condition name\n");
-		return -1;
-	}
-    char *buf = new char[len+1];	// Kernel buffer to put the name in
-    Condition *c;			// The new lock object
-    int id;				// The lockid
-	if((vaddr<0)||(vaddr>MAXADDR))
-	 {
-	 	printf("Invalid Virtual Address\n");
-		return -1;
-	 }
-
-	if((vaddr+len)>MAXADDR)
-    {
-       printf("%s","ERROR: Address length exceeded the total size\n");
-       return -1;
-    }
-
-    if (!buf) {
-	printf("%s","Can't allocate kernel buffer in CreateCondition\n");
-	return -1;
-    }
-
-    if( copyin(vaddr,len,buf) == -1 ) {
-	printf("%s","Bad pointer passed to CreateCondition\n");
-	delete[] buf;
-	return -1;
-    }
-
-    buf[len]='\0';
-					#ifdef NETWORK
-		//printf("Inside NW Cl\n");
-		PacketHeader outPktHdr, inPktHdr;
-		MailHeader outMailHdr, inMailHdr;
-		char *data=new char[100];
-		char buffer[MaxMailSize];
-		outPktHdr.to = ServerID;
-		outMailHdr.to = 0;
-		outMailHdr.from = netname;
-		//Lock Name should come from User Program
-		sprintf(data,"%d;%s;%d;%d",SC_CreateCondition,buf,netname,0);
-		printf("Data:%s\n",data);
-		outMailHdr.length = strlen(data)+1;
-		printf("Sending \"%s\" to %d\n",data,ServerID);
-		if(!postOffice->Send(outPktHdr,outMailHdr,data)){
-			printf("CreateLock Send failed. You must have Server nachos running. Nachos Terminating\n");
-			interrupt->Halt();
-		}
-		postOffice->Receive(netname, &inPktHdr, &inMailHdr, buffer);
-		printf("Recieved \"%s\" from %d\n",data,inPktHdr.from);
-		fflush(stdout);
-		delete[] buf;
-		return atoi(buffer);
-	#else
-
-    pageTableLock[TotalProcessCount]->Acquire();
-    c = new Condition("CreateConditionVariable");
-	//printf("CV:%d\n",c);
-    if ( c )
-       {	  
-        if ((id = currentThread->space->conditionTable.Put(c)) == -1 )
-		{
-    		delete c;
-			printf("unable to Create CV \n");
-		}
-    	else
-    	{
-			CVUsuageCntr[id]=0;
-    	    pageTableLock[TotalProcessCount]->Release();
-			//printf("Condition Variable created\n");
-    		return id;
-    	}
-       }
-
-    pageTableLock[TotalProcessCount]->Release();
-    return -1; 
-#endif		
-}
-
-
-void DestroyCondition_Syscall(int ConditionPos)
-{
-		#ifdef NETWORK
-		//printf("Inside NW Cl\n");
-		PacketHeader outPktHdr, inPktHdr;
-		MailHeader outMailHdr, inMailHdr;
-		char *data=new char[100];
-		char buffer[MaxMailSize];
-		outPktHdr.to = ServerID;
-		outMailHdr.to = 0;
-		outMailHdr.from = netname;
-		//Lock Name should come from User Program
-		sprintf(data,"%d;%d;%d;%d",SC_DestroyCondition,ConditionPos,netname,0);
-		printf("Data:%s\n",data);
-		outMailHdr.length = strlen(data)+1;
-		printf("Sending \"%s\" to %d\n",data,ServerID);
-		if(!postOffice->Send(outPktHdr,outMailHdr,data)){
-			printf("CreateLock Send failed. You must have Server nachos running. Nachos Terminating\n");
-			interrupt->Halt();
-		}
-		postOffice->Receive(netname, &inPktHdr, &inMailHdr, buffer);
-		printf("Recieved \"%s\" from %d\n",data,inPktHdr.from);
-		fflush(stdout);
-		//delete[] buf;
-		return;
-	#else
-    // Destroy the ConditionVariable associated with id ConditionPos.  WITH error reporting
-	if((ConditionPos<0)||(ConditionPos>MAXCVS))
-	{
-		printf("ERROR: Invalid CV Index\n");
-		return;
-	}
-    pageTableLock[TotalProcessCount]->Acquire();
-    Condition *c = (Condition*)currentThread->space->conditionTable.Get(ConditionPos);
-	if(CVUsuageCntr[ConditionPos]==0)
-	{
-		if(c){
-		  delete c;
-		  currentThread->space->conditionTable.Remove(ConditionPos);
-		  //printf("Condition Destroyed\n");
-		  }
-		 else
-			printf("%s","ERROR:Destroy Condition failed!\n");
-	}
-    else
-      printf("ERROR:Condition still in use, Destroy Condition failed %d!\n",ConditionPos);
-    
-    pageTableLock[TotalProcessCount]->Release();
-		#endif
-}
-
-void Wait_Syscall(int ConditionPos,int LockPos)
-{
 	#ifdef NETWORK
-		//printf("Inside NW Cl\n");
-		PacketHeader outPktHdr, inPktHdr;
-		MailHeader outMailHdr, inMailHdr;
-		char *data=new char[100];
-		char buffer[MaxMailSize];
-		outPktHdr.to = ServerID;
-		outMailHdr.to = 0;
-		outMailHdr.from = netname;
-		//Lock ID should come from User Program
-		sprintf(data,"%d;%d;%d;%d;%d",SC_Wait,LockPos,ConditionPos,netname,0);
-		//printf("Data:%s\n",data);
-		outMailHdr.length = strlen(data)+1;
-		printf("Sending \"%s\" to %d\n",data,ServerID);
-		if(!postOffice->Send(outPktHdr,outMailHdr,data)){
-			printf("AcquireLock Send failed. You must have Server nachos running. Nachos Terminating\n");
-			interrupt->Halt();
-		}
-		postOffice->Receive(netname, &inPktHdr, &inMailHdr, buffer);
-		printf("Recieved \"%s\" from %d\n",data,inPktHdr.from);
-		fflush(stdout);
-		return;
-	#else
-	if((ConditionPos<0)||(ConditionPos>MAXCVS))
-	{
-		printf("ERROR: Invalid CV Index\n");
-		return;
+	PacketHeader outPktHdr, inPktHdr;
+	MailHeader outMailHdr, inMailHdr;
+	char *data=new char[100];
+	char buffer[MaxMailSize];
+	outPktHdr.to = netname;
+	outMailHdr.to = (currentThread->getMailboxNO()+1);
+	outMailHdr.from = currentThread->getMailboxNO();
+	//Lock Name should come from User Program
+	// request_type;lock id; client ID, threadID=0
+	sprintf(data,"%d;%d;%d;%d",SC_DestroyMV,MVID,netname,0); 
+	DEBUG('q',"Data:%s\n",data);
+	outMailHdr.length = strlen(data)+1;
+	DEBUG('q',"Sending \"%s\" to %d\n",data,netname);
+	if(!postOffice->Send(outPktHdr,outMailHdr,data)){
+		printf("DestroyLock Send failed. You must have Server nachos running. Nachos Terminating\n");
+		interrupt->Halt();
 	}
-
-	if((LockPos<0)||(LockPos>MAXLOCKS))
-	{
-		printf("ERROR: Invalid Lock Index\n");
-		return;
-	}
-
-    Lock *l;
-	Condition *c;
-
-    pageTableLock[TotalProcessCount]->Acquire();
-	l = (Lock*)currentThread->space->lockTable.Get(LockPos);
-	//printf("Lock:%d\n", (Lock*)currentThread->space->lockTable.Get(LockPos));
-    c = (Condition*)currentThread->space->conditionTable.Get(ConditionPos);
-	//printf("CV:%d\n %d\n", (Condition*)currentThread->space->conditionTable.Get(ConditionPos),ConditionPos);
-	pageTableLock[TotalProcessCount]->Release();
-    
-    if (c)
-		{
-      		if (l)
-				{
-				    CVUsuageCntr[ConditionPos]++;
-					//printf("Wait\n");
-					c->Wait(l);
-				}
-		
-		    else
-				{
-					printf("%s","Bad lock passed\n");  
-				}
-		}
-    else
-		{
-      		printf("%s","Bad Condition Variable passed!\n");  
-		}
-		#endif
+	postOffice->Receive(currentThread->getMailboxNO(), &inPktHdr, &inMailHdr, buffer);
+	DEBUG('q',"Recieved \"%s\" from %d\n",data,inPktHdr.from);
+	fflush(stdout);
+	delete []data;
+	return ;
+	#endif
 }
 
 
-void Signal_Syscall(int ConditionPos,int LockPos)
+int GetMV_Syscall(int MVID)
 {
-		#ifdef NETWORK
-		//printf("Inside NW Cl\n");
-		PacketHeader outPktHdr, inPktHdr;
-		MailHeader outMailHdr, inMailHdr;
-		char *data=new char[100];
-		char buffer[MaxMailSize];
-		outPktHdr.to = ServerID;
-		outMailHdr.to = 0;
-		outMailHdr.from = netname;
-		//Lock ID should come from User Program
-		sprintf(data,"%d;%d;%d;%d;%d",SC_Signal,LockPos,ConditionPos,netname,0);
-		//printf("Data:%s\n",data);
-		outMailHdr.length = strlen(data)+1;
-		printf("Sending \"%s\" to %d\n",data,ServerID);
-		if(!postOffice->Send(outPktHdr,outMailHdr,data)){
-			printf("AcquireLock Send failed. You must have Server nachos running. Nachos Terminating\n");
-			interrupt->Halt();
-		}
-		postOffice->Receive(netname, &inPktHdr, &inMailHdr, buffer);
-		printf("Recieved \"%s\" from %d\n",data,inPktHdr.from);
-		fflush(stdout);
-		return;
-	#else
-		if((ConditionPos<0)||(ConditionPos>MAXCVS))
+
+	if((MVID<0)||(MVID>MAXMV))
 	{
-		printf("ERROR: Invalid CV Index\n");
-		return;
+		printf("ERROR: Invalid MV Index\n");
+		return -1;
 	}
-
-	if((LockPos<0)||(LockPos>MAXLOCKS))
-	{
-		printf("ERROR: Invalid Lock Index\n");
-		return;
+#ifdef NETWORK
+	PacketHeader outPktHdr, inPktHdr;
+	MailHeader outMailHdr, inMailHdr;
+	char *data=new char[100];
+	char buffer[MaxMailSize];
+	outPktHdr.to = netname;
+	outMailHdr.to = (currentThread->getMailboxNO()+1);
+	outMailHdr.from = currentThread->getMailboxNO();
+	//Lock Name should come from User Program
+	// request_type;lock id; client ID, threadID=0
+	sprintf(data,"%d;%d;%d;%d",SC_GetMV,MVID,netname,0); 
+	DEBUG('q',"Data:%s\n",data);
+	outMailHdr.length = strlen(data)+1;
+	DEBUG('q',"Sending \"%s\" to %d\n",data,netname);
+	if(!postOffice->Send(outPktHdr,outMailHdr,data)){
+		printf("DestroyLock Send failed. You must have Server nachos running. Nachos Terminating\n");
+		interrupt->Halt();
 	}
-
-    Lock *l;
-	Condition *c;
-
-    pageTableLock[TotalProcessCount]->Acquire();
-	l = (Lock*)currentThread->space->lockTable.Get(LockPos);
-    c = (Condition*)currentThread->space->conditionTable.Get(ConditionPos);
-	pageTableLock[TotalProcessCount]->Release();
-	if (c)
-		{
-	  		if (l)
-				{
-					c->Signal(l);
-					//printf("Signalled\n");
-					CVUsuageCntr[ConditionPos]--;
-				}
-		
-		    else
-				{
-					printf("%s","Bad lock passed\n");  
-				}
-		}
-	else
-		{
-	  		printf("%s","Bad Condition Variable passed!\n");  
-		}
+	postOffice->Receive(currentThread->getMailboxNO(), &inPktHdr, &inMailHdr, buffer);
+	DEBUG('q',"Recieved \"%s\" from %d\n",data,inPktHdr.from);
+	fflush(stdout);
+	delete []data;
+	return atoi(buffer);
 		#endif
 }
 
-void Broadcast_Syscall(int ConditionPos,int LockPos)
+void SetMV_Syscall(int MVID,int MVValue)
 {
-			#ifdef NETWORK
-		//printf("Inside NW Cl\n");
-		PacketHeader outPktHdr, inPktHdr;
-		MailHeader outMailHdr, inMailHdr;
-		char *data=new char[100];
-		char buffer[MaxMailSize];
-		outPktHdr.to = ServerID;
-		outMailHdr.to = 0;
-		outMailHdr.from = netname;
-		//Lock ID should come from User Program
-		sprintf(data,"%d;%d;%d;%d;%d",SC_Broadcast,LockPos,ConditionPos,netname,0);
-		//printf("Data:%s\n",data);
-		outMailHdr.length = strlen(data)+1;
-		printf("Sending \"%s\" to %d\n",data,ServerID);
-		if(!postOffice->Send(outPktHdr,outMailHdr,data)){
-			printf("AcquireLock Send failed. You must have Server nachos running. Nachos Terminating\n");
-			interrupt->Halt();
-		}
-		postOffice->Receive(netname, &inPktHdr, &inMailHdr, buffer);
-		printf("Recieved \"%s\" from %d\n",data,inPktHdr.from);
-		fflush(stdout);
-		return;
-	#else
-		if((ConditionPos<0)||(ConditionPos>MAXCVS))
+
+	if((MVID<0)||(MVID>MAXMV))
 	{
-		printf("ERROR: Invalid CV Index\n");
-		return;
+		printf("ERROR: Invalid MV Index\n");
+		return ;
 	}
-
-	if((LockPos<0)||(LockPos>MAXLOCKS))
+	if((MVValue<0)||(MVID>65536))
 	{
-		printf("ERROR: Invalid Lock Index\n");
-		return;
+		printf("ERROR: %d is Too large or less value for MV\n",MVID);
+		return ;
 	}
-
-	Lock *l;
-	Condition *c;
-
-    pageTableLock[TotalProcessCount]->Acquire();
-	l = (Lock*)currentThread->space->lockTable.Get(LockPos);
-    c = (Condition*)currentThread->space->conditionTable.Get(ConditionPos);
-	pageTableLock[TotalProcessCount]->Release();
-	if (c)
-		{
-	  		if (l)
-				{
-					c->Broadcast(l);
-				}
-		
-		    else
-				{
-					printf("%s","Bad lock passed\n");  
-				}
-		}
-	else
-		{
-	  		printf("%s","Bad Condition Variable passed!\n");  
-		}
+#ifdef NETWORK
+	PacketHeader outPktHdr, inPktHdr;
+	MailHeader outMailHdr, inMailHdr;
+	char *data=new char[100];
+	char buffer[MaxMailSize];
+	outPktHdr.to = netname;
+	outMailHdr.to = (currentThread->getMailboxNO()+1);
+	outMailHdr.from = currentThread->getMailboxNO();
+	//Lock Name should come from User Program
+	// request_type;lock id; client ID, threadID=0
+	sprintf(data,"%d;%d;%d;%d;%d",SC_SetMV,MVID,MVValue,netname,0); 
+	DEBUG('q',"Data:%s\n",data);
+	outMailHdr.length = strlen(data)+1;
+	DEBUG('q',"Sending \"%s\" to %d\n",data,netname);
+	if(!postOffice->Send(outPktHdr,outMailHdr,data)){
+		printf("DestroyLock Send failed. You must have Server nachos running. Nachos Terminating\n");
+		interrupt->Halt();
+	}
+	postOffice->Receive(currentThread->getMailboxNO(), &inPktHdr, &inMailHdr, buffer);
+	DEBUG('q',"Recieved \"%s\" from %d\n",data,inPktHdr.from);
+	fflush(stdout);
+	delete []data;
+	return ;
 		#endif
 }
 
 
 void Yield_Syscall()
 {
-   
+    //pageTableLock[TotalProcessCount]->Acquire();
     currentThread->Yield();
-
+    //pageTableLock[TotalProcessCount]->Release();
 }
 
   
   
 void Exit_Syscall(int exitCode)
 {
-
 	if((currentThread->currentThreadID!=-1)&&(currentThread->currentProcID!=-1))
 	{
 		processTableLock->Acquire();
@@ -863,14 +929,14 @@ void Exit_Syscall(int exitCode)
 		{
 			if(ActiveNoOfProcess==1)
 			{
-				
+				//printf("Last thread of last process with PID %d exit\n",currentThread->currentThreadID);
 				processTableLock->Release();
 				//Shutdown OS
 				interrupt->Halt();
 			}
 			else
 			{
-				
+				//printf("Last thread of PID %d exit\n",currentThread->currentProcID);
 				//Destroy page table
 				delete currentThread->space;
 				ActiveNoOfProcess--;
@@ -882,7 +948,7 @@ void Exit_Syscall(int exitCode)
 		{
 			//Get the stack top address to destroy this thread stack
 			int myStackTop=processTable[currentThread->currentProcID].StackLoc[currentThread->currentThreadID];
-			
+			//printf("PID %d Thread ID %d Stack Top %d\n",currentThread->currentProcID, currentThread->currentThreadID,myStackTop);
 			currentThread->space->DestroyStackBitMap(myStackTop);
 			//default the stack loc on Proc table
 			processTable[currentThread->currentProcID].StackLoc[currentThread->currentThreadID]=NULL;
@@ -903,7 +969,7 @@ void Exit_Syscall(int exitCode)
 
 
 void KernelFunc(int vaddr){
-	
+	//printf("Entering KernelFunc\n");
 //setup all registers and then switch to user mode to run the user program
   //write to the register PCReg the virtual address.
   machine->WriteRegister(PCReg, vaddr);
@@ -913,10 +979,10 @@ void KernelFunc(int vaddr){
   currentThread->space->RestoreState();    
 	//get value from process table write to the stack register , the starting postion of the stack for this thread.
 
-	
+	//printf("MyPID%d\n",j);
 	processTableLock->Acquire();
 	int saddr = processTable[currentThread->currentProcID].StackLoc[currentThread->currentThreadID];   //this is the stack address in process table for current thread
-	
+	//printf("Stack Address%d\n",saddr);
 	machine->WriteRegister(StackReg, saddr);    //write the current thread's stack address to stackReg
 	processTableLock->Release();
 	machine->Run();
@@ -924,7 +990,7 @@ void KernelFunc(int vaddr){
 
 void Fork_Syscall( unsigned int vaddr)
 {
-	
+	//printf("Entering Fork%d\n",vaddr);
 	Thread *t = new Thread("CurrentThread");
 	unsigned int Size;
 	if(currentThread->space==NULL)
@@ -940,9 +1006,9 @@ void Fork_Syscall( unsigned int vaddr)
 	}
 	int currentPID =-1;
 	processTableLock->Acquire();
-	currentPID=currentThread->currentProcID;
+  currentPID=currentThread->currentProcID;
 	processTableLock->Release();
-	
+	//printf("currentPID%d\n",currentPID);
 
 	if(pageTableLock[currentPID]==NULL)
 	{
@@ -956,9 +1022,9 @@ void Fork_Syscall( unsigned int vaddr)
 	}
 	pageTableLock[currentPID]->Acquire();
 	int numPages = currentThread->space->GetnumPages();
-	_TranslationEntry *PageTable = new _TranslationEntry[numPages];
+	TranslationEntry *PageTable = new TranslationEntry[numPages];;
 	PageTable=currentThread->space->GetpageTable();
-	_TranslationEntry *newPageTable = new _TranslationEntry[numPages+8];
+	TranslationEntry *newPageTable = new TranslationEntry[numPages+8];
 	 
 	 //copy old to new pagetable
 	 for(int i = 0; i < numPages; i++){
@@ -968,22 +1034,25 @@ void Fork_Syscall( unsigned int vaddr)
 		newPageTable[i].use = PageTable[i].use;  //Hardware sets this whenever page is referenced or modified
 		newPageTable[i].dirty = PageTable[i].dirty;
 		newPageTable[i].readOnly = PageTable[i].readOnly;  
-		newPageTable[i].SwapLocation=PageTable[i].SwapLocation;
-		newPageTable[i].location=PageTable[i].location;
-		newPageTable[i].file_offset=PageTable[i].file_offset;
-		
 	 }
 	 
 	// initialize the new created pagetable entry
 	 for(int i = numPages; i < numPages+8; i++ ){
 		newPageTable[i].virtualPage = i;	// for now, virtual page # = phys page #
+		bitMapLock->Acquire();
+		int pp = PhyMemBitMap->Find();	//Find() will find the free bit and also sets the locn it found
+		
+		if( pp == -1 ){
+			printf("No more memory available!!Execution stops now!\n");
+			interrupt->Halt();
+		}
+		//executable->ReadAt(pp*PageSize, PageSize, noffH.code.inFileAddr+(i*PageSize));
+		newPageTable[i].physicalPage = pp;
+		bitMapLock->Release();
 		newPageTable[i].valid = TRUE;
 		newPageTable[i].use = FALSE;  //Hardware sets this whenever page is referenced or modified
 		newPageTable[i].dirty = FALSE;
-		newPageTable[i].readOnly = FALSE;  // if the code segment was entirely on        
-		newPageTable[i].SwapLocation=-1;
-		newPageTable[i].location=2;
-		newPageTable[i].file_offset=-1;
+		newPageTable[i].readOnly = FALSE;  // if the code segment was entirely on 
 	 }
 	 
 	 delete[] PageTable;
@@ -991,7 +1060,10 @@ void Fork_Syscall( unsigned int vaddr)
 	 currentThread->space->DelPageTable();
 	 currentThread->space->SetnumPages(numPages);	 
 	 currentThread->space->SetpageTable(newPageTable);
+	 // PageTable = newPageTable;
 
+	 machine->pageTable=newPageTable;
+	 machine->pageTableSize = numPages;
 	 pageTableLock[currentPID]->Release();
 	 
 	 t->space=currentThread->space;
@@ -1005,36 +1077,32 @@ void Fork_Syscall( unsigned int vaddr)
 	 processTable[currentPID].StackLoc[t->currentThreadID]=(numPages * PageSize)-16;
 	 processTableLock->Release();
 	 t->Fork((VoidFunctionPtr)KernelFunc,vaddr);
-	
 }
  
 
 void ExecFunc(int addr)
 {
-	
 		//setup all registers and then switch to user mode to run the user program
 		//write to the register PCReg the virtual address.
     currentThread->space->InitRegisters();
 		//call Restorestate function inorder to prevent information loss while context switching.
     currentThread->space->RestoreState();
 		//Run the new executable as a thread!
-		
+		//printf("kernel exec fn\n");
+		DEBUG('q',"kernel exec fn...................\n");
     machine->Run();
-		
+		printf("Serious error!!\n");
 }
 
 SpaceId Exec_Syscall(unsigned int fileName,int len)
 {
-	
-	
+	//printf("len %d\n",len);
 	if(len<=0)
 		{
 			printf("Invalid filename length for EXEC system call!\n");
 			return -1;
 		}
-	
     OpenFile *executable;
-	
     char *buf= new char(len+1);
 		if(copyin(fileName,len,buf)==-1 ) 
 		{
@@ -1044,28 +1112,26 @@ SpaceId Exec_Syscall(unsigned int fileName,int len)
 		}
 		
 		buf[ len]='\0';
-		
-		
-        executable = fileSystem->Open(buf);
-	   
+		printf("buf %s\n",buf);
+    executable = fileSystem->Open(buf);
 		delete buf;
-		
+		//printf("executable %d\n",executable);
     if(executable==0)
 		{
 			printf("File not found\n");
-			return -1;
-		}
-        printf("line number 823 \n");
+      return -1;
+    }
+    
 		AddrSpace *myProcAddrSpace=new AddrSpace(executable);
-		//delete executable;
+		delete executable;
 		
 		//Update proc table
 		processTableLock->Acquire();
 		ActiveNoOfProcess++;
 		processTable[TotalProcessCount].myProcAddrSpace=myProcAddrSpace;
 		processTable[TotalProcessCount].PID=TotalProcessCount;
-		processTable[TotalProcessCount].TotalThreads=0;
-		processTable[TotalProcessCount].AliveThreadCount=0;
+		processTable[TotalProcessCount].TotalThreads=2;
+		processTable[TotalProcessCount].AliveThreadCount=2;
 		
 		//Get the Stack Address
 		int StackTop=((myProcAddrSpace->GetnumPages())*PageSize)-16;
@@ -1075,12 +1141,24 @@ SpaceId Exec_Syscall(unsigned int fileName,int len)
 		t->currentThreadID=0;
 		t->currentProcID=TotalProcessCount;
 		TotalProcessCount++;
+		//Added for Project 4
+		t->setMailboxNo(nextMailBoxNo);
+		nextMailBoxNo++;
+		Thread *ntThread = new Thread("ntThread");
+		ntThread->setMailboxNo(nextMailBoxNo);
+		ntThread->space=myProcAddrSpace;
+		ntThread->currentThreadID=1;
+		nextMailBoxNo++;
+		//end added for Project 4
 		processTableLock->Release();
+		
 		//Start new process created as a thread
 		t->Fork((VoidFunctionPtr)ExecFunc,0);
-		
+		ntThread->Fork((VoidFunctionPtr)networkThread,(nextMailBoxNo-1));
+		DEBUG('q',"Forked networkThread...................");
 		//return the address space identifier
 		return (int)t->space;
+
 }
  
 void Print_Syscall(unsigned int vaddr)
@@ -1176,186 +1254,51 @@ int Scan_Syscall(unsigned int vaddr)
    return p;
 }
 
-#ifdef NETWORK
-int CreateMV_Syscall(unsigned int vaddr, int len)
+void StartSimulation()
 {
-    // Create a MV  with the name in the user buffer pointed to by
-    // vaddr.  The MV name is at most MAXFILENAME chars long.  
+	DEBUG('q',"Inside StartSimulation\n");
+	PacketHeader outPktHdr, inPktHdr;
+	MailHeader outMailHdr, inMailHdr;
+	char ServerRespbuffer[40];
+	int myMailBoxNo=0;
+	myMailBoxNo = currentThread->getMailboxNO();
+	DEBUG('q',"StartSimulation...........mailbox ID %d\n",myMailBoxNo);
+	DEBUG('q',"StartSimulation Waiting for message from NTThread\n");
+	postOffice->Receive(myMailBoxNo, &inPktHdr, &inMailHdr, ServerRespbuffer);
+	DEBUG('q',"Got \"%s\" from %d, box %d ** User prog to start simulation now!**\n",ServerRespbuffer,inPktHdr.from,inMailHdr.from); 
+	fflush(stdout);
+}
 
-	if((len<=0)||(len>MAXFILENAME))
-	{
-		printf("Invalid size for Lock name\n");
-		return -1;
-	}
-    char *buf = new char[len+1];	// Kernel buffer to put the name in
-    Lock *l;			// The new lock object
-    int id;				// The lockid
-
-	if((vaddr<0)||(vaddr>MAXADDR))
+int NameGen_Syscall(unsigned int vaddr1, int i, int len, unsigned int vadd)
+{
+   printf("inside name gen\n");
+ char *buf = new char[len+1];
+ char *s = new char[1];
+ int buff_len;
+ 
+	 if( copyin(vaddr1,len,buf) == -1 )                              // copying from virtual adrress to buf
 	 {
-	 	printf("Invalid Virtual Address\n");
-		return -1;
-	 }
-
-	if((vaddr+len)>MAXADDR)
-	{
-		 printf("%s","ERROR: Address length exceeded the total size\n");
-		 return -1;
-	}
-  if (!buf)
-	{
-		printf("%s","Can't allocate kernel buffer in CreateLock\n");
-		return -1;
-  }
-
-	if( copyin(vaddr,len,buf) == -1 )
-	{
-		printf("%s","Bad pointer passed to CreateLock\n");
+		printf("%s","Bad pointer passed to CreateCondition\n");
 		delete[] buf;
 		return -1;
-	}
-	//printf("Inside NW Cl\n");
-	PacketHeader outPktHdr, inPktHdr;
-	MailHeader outMailHdr, inMailHdr;
-	char *data=new char[100];
-	char buffer[MaxMailSize];
-	outPktHdr.to = ServerID;
-	outMailHdr.to = 0;
-	outMailHdr.from = netname;
-	//Lock Name should come from User Program
-	// request_type;lock name; client ID, threadID=0
-	sprintf(data,"%d;%s;%d;%d",SC_CreateMV,buf,netname,0);
-	printf("Data:%s\n",data);
-	outMailHdr.length = strlen(data)+1;
-	printf("Sending \"%s\" to %d\n",data,ServerID);
-	if(!postOffice->Send(outPktHdr,outMailHdr,data)){
-		printf("CreateLock Send failed. You must have Server nachos running. Nachos Terminating\n");
-		interrupt->Halt();
-	}
-	postOffice->Receive(netname, &inPktHdr, &inMailHdr, buffer);
-	printf("Recieved \"%s\" from %d\n",data,inPktHdr.from);
-	fflush(stdout);
-	delete[] buf;
-	return atoi(buffer);
-}
+	 }
+	   sprintf(s,"%d",i);                         
+	   strcat(buf,s);                                               // concatinating buf with the index
+	   buff_len=strlen(buf);
+	   
+      if ( copyout(vadd, buff_len, buf) == -1 )                   // copying from buff back to virtual address
+	  {
+			printf("%s","Bad pointer passed to Read: data not copied\n");
+			delete[] buf;
+	        return -1;
+      }
+	  return 1;
    
-void DestroyMV_Syscall(int MVID)
-{
-
-	if((MVID<0)||(MVID>MAXLOCKS))
-	{
-		printf("ERROR: Invalid Lock Index\n");
-		return;
-	}
-
-
-	PacketHeader outPktHdr, inPktHdr;
-	MailHeader outMailHdr, inMailHdr;
-	char *data=new char[100];
-	char buffer[MaxMailSize];
-	outPktHdr.to = ServerID;
-	outMailHdr.to = 0;
-	outMailHdr.from = netname;
-	//Lock Name should come from User Program
-	// request_type;lock id; client ID, threadID=0
-	sprintf(data,"%d;%d;%d;%d",SC_DestroyMV,MVID,netname,0); 
-	printf("Data:%s\n",data);
-	outMailHdr.length = strlen(data)+1;
-	printf("Sending \"%s\" to %d\n",data,ServerID);
-	if(!postOffice->Send(outPktHdr,outMailHdr,data)){
-		printf("DestroyLock Send failed. You must have Server nachos running. Nachos Terminating\n");
-		interrupt->Halt();
-	}
-	postOffice->Receive(netname, &inPktHdr, &inMailHdr, buffer);
-	printf("Recieved \"%s\" from %d\n",data,inPktHdr.from);
-	fflush(stdout);
-	return ;
-	
 }
-
-
-int GetMV_Syscall(int MVID)
-{
-
-	if((MVID<0)||(MVID>MAXMV))
-	{
-		printf("ERROR: Invalid MV Index\n");
-		return -1;
-	}
-
-
-	PacketHeader outPktHdr, inPktHdr;
-	MailHeader outMailHdr, inMailHdr;
-	char *data=new char[100];
-	char buffer[MaxMailSize];
-	outPktHdr.to = ServerID;
-	outMailHdr.to = 0;
-	outMailHdr.from = netname;
-	//Lock Name should come from User Program
-	// request_type;lock id; client ID, threadID=0
-	sprintf(data,"%d;%d;%d;%d",SC_GetMV,MVID,netname,0); 
-	printf("Data:%s\n",data);
-	outMailHdr.length = strlen(data)+1;
-	printf("Sending \"%s\" to %d\n",data,ServerID);
-	if(!postOffice->Send(outPktHdr,outMailHdr,data)){
-		printf("DestroyLock Send failed. You must have Server nachos running. Nachos Terminating\n");
-		interrupt->Halt();
-	}
-	postOffice->Receive(netname, &inPktHdr, &inMailHdr, buffer);
-	printf("Recieved \"%s\" from %d\n",data,inPktHdr.from);
-	fflush(stdout);
-	return atoi(buffer);
-	
-}
-
-void SetMV_Syscall(int MVID,int MVValue)
-{
-
-	if((MVID<0)||(MVID>MAXMV))
-	{
-		printf("ERROR: Invalid MV Index\n");
-		return ;
-	}
-	if((MVValue<0)||(MVID>65536))
-	{
-		printf("ERROR: %d is Too large or less value for MV\n",MVID);
-		return ;
-	}
-
-	PacketHeader outPktHdr, inPktHdr;
-	MailHeader outMailHdr, inMailHdr;
-	char *data=new char[100];
-	char buffer[MaxMailSize];
-	outPktHdr.to = ServerID;
-	outMailHdr.to = 0;
-	outMailHdr.from = netname;
-	//Lock Name should come from User Program
-	// request_type;lock id; client ID, threadID=0
-	sprintf(data,"%d;%d;%d;%d;%d",SC_SetMV,MVID,MVValue,netname,0); 
-	printf("Data:%s\n",data);
-	outMailHdr.length = strlen(data)+1;
-	printf("Sending \"%s\" to %d\n",data,ServerID);
-	if(!postOffice->Send(outPktHdr,outMailHdr,data)){
-		printf("DestroyLock Send failed. You must have Server nachos running. Nachos Terminating\n");
-		interrupt->Halt();
-	}
-	postOffice->Receive(netname, &inPktHdr, &inMailHdr, buffer);
-	printf("Recieved \"%s\" from %d\n",data,inPktHdr.from);
-	fflush(stdout);
-	return ;
-	
-}
-
-
-#endif
-
 void ExceptionHandler(ExceptionType which)
  {
     int type = machine->ReadRegister(2); // Which syscall?
     int rv=0; 	// the return value from a syscall
-	TranslationEntry *mypagetable;
-	int vpa,vpnum;
-
     if ( which == SyscallException ) {
 	switch (type) {
 	    default:
@@ -1461,6 +1404,14 @@ void ExceptionHandler(ExceptionType which)
 		DEBUG('a', "Scan syscall.\n");
 		rv=Scan_Syscall(machine->ReadRegister(4));
 		break;
+		case SC_StartSimulation:
+		DEBUG('a', "StartSimulation syscall.\n");
+		StartSimulation();
+		break;
+		case SC_NameGen:
+		DEBUG('a', "Print3 syscall.\n");
+		NameGen_Syscall(machine->ReadRegister(4), machine->ReadRegister(5), machine->ReadRegister(6), machine->ReadRegister(7));
+		break;
 #ifdef NETWORK		
       case SC_CreateMV:
 		DEBUG('a', "Create Lock syscall.\n");
@@ -1474,287 +1425,1556 @@ void ExceptionHandler(ExceptionType which)
 		DEBUG('a', "Destroy Lock syscall.\n");
 		rv = GetMV_Syscall(machine->ReadRegister(4));
 		break;
-      case SC_SetMV:
+    case SC_SetMV:
 		DEBUG('a', "Destroy Lock syscall.\n");
 		SetMV_Syscall(machine->ReadRegister(4), machine->ReadRegister(5));
 		break;	
-#endif		
+#endif	
 	}
 
-			// Put in the return value and increment the PC
-			machine->WriteRegister(2,rv);
-			machine->WriteRegister(PrevPCReg,machine->ReadRegister(PCReg));
-			machine->WriteRegister(PCReg,machine->ReadRegister(NextPCReg));
-			machine->WriteRegister(NextPCReg,machine->ReadRegister(PCReg)+4);
-			return;
-    } 
-	
-		else if(which == PageFaultException)
-		{
-			//TLB miss
-			int vAdd=machine->ReadRegister(39);
-			if(vAdd>=0)
-			{
-				//page fault handler
-				HandlePageFault(machine->ReadRegister(39));
-			}
-			else
-			{
-				//checking if -ve value in the address
-				printf("Negative vAdd:%d\n",vAdd);
-				currentThread->Finish();
-			}
-		}
-
-	
-	else {
+	// Put in the return value and increment the PC
+	machine->WriteRegister(2,rv);
+	machine->WriteRegister(PrevPCReg,machine->ReadRegister(PCReg));
+	machine->WriteRegister(PCReg,machine->ReadRegister(NextPCReg));
+	machine->WriteRegister(NextPCReg,machine->ReadRegister(PCReg)+4);
+	return;
+    } else {
       cout<<"Unexpected user mode exception - which:"<<which<<"  type:"<< type<<endl;
       interrupt->Halt();
     }
 
 }
 
-void HandlePageFault(int vAdd)
+
+void networkThread(int ntThreadMailboxID)
 {
-	
-	int vpn,ppn;
-	vpn=vAdd/PageSize;
-	if(vpn<0)
+	DEBUG('q',"Inside networkThread\n");
+	int SrvLockCounter=0;
+	int SrvCVCounter=0;
+	int SrvMVCounter=0;
+	SvrLockData_t SvrLocks[MAXLOCKS];
+	SvrCVData_t SvrCV[MAXCV];
+	SvrMVData_t SvrMV[MAXMV];
+	int WaitingLockInCV[MAXCV];
+	List *ServerCVWaitQ[MAXCV];
+	List *SvrLockWaitQ[MAXLOCKS];
+	Table *RegTable=new Table(100);
+	int ClientID[100];
+	int ThreadID[100];
+	int i=0;
+	char *buffer=new char[40];
+	int NoOfUpComingMsg=0;
+	char *msg=new char[5];
+	PacketHeader outPktHdr, inPktHdr;
+	MailHeader outMailHdr, inMailHdr;
+	char *ServerRespbuffer=new char[40];
+	char *ntRespBuffer=new char[40];
+	int myMailBoxNo=0;
+	LastTimeStampTable_t LastTimeStampTable[100];
+	List *msgQ;
+	msgQ=new List();
+	int index=0;
+	int TotalNWThreads=0;
+	int Counter=0;
+	//Project 4 code Start
+	initialize(SvrLocks,SvrCV,SvrMV, WaitingLockInCV, ServerCVWaitQ, SvrLockWaitQ,&SrvLockCounter, &SrvCVCounter,&SrvMVCounter);
+	//Project 4 code end	    
+	ntThreadLock->Acquire();
+	for (int a=0;a<100;a++)
 	{
-		printf("Negative VPN\n");
-		
+		ClientID[a]=0;
+		ThreadID[a]=0;
+		LastTimeStampTable[a].TimeStamp=0;
 	}
-	//checking the corresponding entry in the ipt
-	ppn=getIPTindex(vpn);
-	// IPT miss!!!!
-	if(ppn==-1)
+	ntThreadLock->Release();
+	outPktHdr.to = 0;
+	outMailHdr.to = 0;
+	outMailHdr.from=myMailBoxNo=ntThreadMailboxID;
+	msg="1";
+	outMailHdr.length=strlen(msg)+1;
+	DEBUG('q',"Sending \"%s\" to %d\n",msg,outPktHdr.to);
+	DEBUG('q', "Network Thread ID %d of client ID %d registration\n", outMailHdr.from,netname);
+	if(!postOffice->Send(outPktHdr,outMailHdr,msg)){
+		printf("networkThread registration Send failed!\n");
+	}
+
+	DEBUG('q',"%d mailbox Waiting for message from GroupServer\n",myMailBoxNo);
+	postOffice->Receive((int)ntThreadMailboxID, &inPktHdr, &inMailHdr, &buffer[0]);
+	DEBUG('q',"Got \"%s\" from %d, box %d\n",buffer,inPktHdr.from,inMailHdr.from); 
+	fflush(stdout);
+	NoOfUpComingMsg=atoi(buffer);	
+	DEBUG('q',"NoOfUpComingMsg = %d \n",NoOfUpComingMsg);
+	//delete []buffer;
+	for(int k=0;k<NoOfUpComingMsg;k++)
 	{
-		//Update IPT => Load exec into main memory
-		ppn=loadPageIntoIPT(vpn);
-		
-		if(ppn<0)
+		for(int ic=0;ic<40;ic++)
 		{
-			//no physical pages!!!!!
-			interrupt->Halt();
+			ServerRespbuffer[ic]='\0';
 		}
-	}	
-	updateTLB(ppn);
-}
-
-int getIPTindex(int vpn)
-{
-	int i;
-	iptlock->Acquire();
-	for(i=0;i<NumPhysPages;i++)
-	{ 
-	 if(ipt[i].virtualPage==vpn &&  ipt[i].valid==true && ipt[i].ProcID==currentThread->currentProcID)
-	 {
-		//ipt entry found
-		iptlock->Release();
-		return i;
-	 }
-	}
-			
- iptlock->Release();
-//ipt miss 
- return -1;
-}
-
-void updateTLB(int i)
-{    
-//updating the TLB entries from the IPT of the corrresponding physical page 
-	IntStatus old=interrupt->SetLevel(IntOff);
-	if(machine->tlb[currentTLB].valid==true)
-	{
-		ipt[machine->tlb[currentTLB].physicalPage].dirty=machine->tlb[currentTLB].dirty;
-	}
-	machine->tlb[currentTLB].virtualPage=ipt[i].virtualPage;
-	machine->tlb[currentTLB].physicalPage=ipt[i].physicalPage;
-	machine->tlb[currentTLB].valid=true;
-	machine->tlb[currentTLB].readOnly=ipt[i].readOnly;
-	machine->tlb[currentTLB].use=ipt[i].use;
-	machine->tlb[currentTLB].dirty=ipt[i].dirty;
-	currentTLB++;
-	if(currentTLB>3)
-	currentTLB=0;
-	interrupt->SetLevel(old);
-}
-
-int loadPageIntoIPT(int vpn)
-{
-	int ppn;
-	iptlock->Acquire();
-	//if the page is in the executable
-
-	if(currentThread->space->myPageTable[vpn].location==0)       
-	{
-		bitMapLock->Acquire();
-	  ppn = PhyMemBitMap->Find();	//Find() will find the free bit and also sets the locn it found
+		DEBUG('q',"[inside] %d mailbox Waiting for message from GroupServer\n",myMailBoxNo);
+		postOffice->Receive(myMailBoxNo, &inPktHdr, &inMailHdr, ServerRespbuffer);
+		DEBUG('q',"[inside]Got \"%s\" from %d, box %d\n",ServerRespbuffer,inPktHdr.from,inMailHdr.from); 
+		fflush(stdout);
+		//Write a logic to decode the 'ServerRespbuffer' and get the list of Client ID and MailBoxID
 		
-		if(ppn!=-1)
+		char c;
+		DEBUG('q',"Network thread started to decode the message %s\n",ServerRespbuffer);
+		int n=0;
+		char *cltID=strtok(ServerRespbuffer,";"); 
+		while(index<1000)
 		{
-			currentThread->space->myPageTable[vpn].physicalPage = ppn; 
-			int tempPPN=ppn;
-			fifoLock->Acquire();            //
-			dummyfifo[dummyfifoCnt++]=ppn; //useful for FIFO option only
-			
-			fifoLock->Release();		  //
-			bitMapLock->Release();
+			if(cltID!=NULL)
+			ClientID[index]=atoi(cltID);
+			if(ClientID[index]==0)
+			{
+				break;
+			}
+			DEBUG('q', "the client id ClientID[%d] is %d \n",index,ClientID[index]);
+			char *cThreadID=strtok(NULL,";");
+			if(cThreadID!=NULL)
+			ThreadID[index]=atoi(cThreadID);
+			DEBUG('q', "the thread id ThreadID[%d] is %d \n",index,ThreadID[index]);
+			index++; 
+			cltID=strtok(NULL,";");
+		}
+	}
+	//delete []ServerRespbuffer;
+	TotalNWThreads=index;
+	DEBUG('q',"TotalNWThreads----------------------- %d\n",TotalNWThreads); 
+	 
+	//Create table for future use
+	for(int m=0;m<TotalNWThreads;m++)
+	{
+		char *buff=new char[40];
+		sprintf(buff,"%d%d",ClientID[m],ThreadID[m]);
+		RegTable->Put(buff);
+		//delete []buff;
+	}
+	
+	//Send message to StartSimulation function
+	outPktHdr.to = netname;
+	outMailHdr.to = (ntThreadMailboxID-1);	
+	msg="1";
+	outMailHdr.length=strlen(msg)+1;
+	outMailHdr.from = ntThreadMailboxID;
+	DEBUG('q',"Sending \"%s\" to my user prg thread mail box at %d\n",msg,outPktHdr.to);
+	DEBUG('q', "****Group formation complete******\n");
+	if(!postOffice->Send(outPktHdr,outMailHdr,msg)){
+		printf("networkThread StartSimulation Send failed!\n");
+	}
+	fflush(stdout);
+		//delete []msg;
+	//Wait on the userprog client machines for recieve
+	while (true)
+ 	{ 
+		for(int i=0;i<100;i++)
+		{
+			if(LastTimeStampTable[i].TimeStamp!=0)
+			DEBUG('q',"LastTimeStampTable[%d].TimeStamp=%d\n",i,LastTimeStampTable[i].TimeStamp); 
+		}
+		DEBUG('q',"..ntThread %d of %d client Waiting for message to address from other networking threads\n",ntThreadMailboxID,netname);
+		postOffice->Receive(ntThreadMailboxID, &inPktHdr, &inMailHdr, &ntRespBuffer[0]);
+		DEBUG('q',"Got \"%s\" from %d, box %d\n",ntRespBuffer,inPktHdr.from,inMailHdr.from); 
+		int ClientNo=inPktHdr.from;
+		int MailBoxNo=inMailHdr.from;
+		if(ClientNo==netname && MailBoxNo==(ntThreadMailboxID-1))
+		{
+			//Pack the message
+			//Get the request from User Prog thread
+			//ntRespBuffer will contain request type
+			char *cMyTimeStamp=new char[40];
+			unsigned long int myTimeStamp;
+			DEBUG('q',"ntThread %d got message from its own upThread %d\n", ntThreadMailboxID,MailBoxNo);
+			//message = ReqType+other parameters aiding ReqType+TimeStamp
+			//STAMP the message
+			myTimeStamp=getTheTimeStamp();
+			//DEBUG('q',"Current time is %ld\n", myTimeStamp);
+			sprintf(cMyTimeStamp,"%ld;",myTimeStamp);
+			strcat(cMyTimeStamp,ntRespBuffer);
+			DEBUG('q',"%s msg is sent to %d ntThreads\n",cMyTimeStamp, TotalNWThreads);
+			//for each ntThreadSend send this message!
+			for(int m=0;m<TotalNWThreads;m++)
+			{
+				outPktHdr.to = ClientID[m];
+				outMailHdr.to = ThreadID[m];
+				outMailHdr.length=strlen(cMyTimeStamp)+1;
+				outMailHdr.from = ntThreadMailboxID;
+				//DEBUG('q',"Sending \"%s\" to %d client ID and %d mailbox\n",cMyTimeStamp,ClientID[m],ThreadID[m]);
+				if(!postOffice->Send(outPktHdr,outMailHdr,cMyTimeStamp)){
+					printf("NetworkThread %d of ClientID %d Send failed!\n",ThreadID[m],ClientID[m]);
+				}
+			}
+			//delete []cMyTimeStamp;
+		}
+		
+		// This message is from newtowrking threads including my NT thread itself!
+		else
+		{
+			char *otherParam=new char[40];
+			//char *cTS=NULL;
+			unsigned long int myTimeStamp=0;
+			unsigned long int TimeStamp=0;
+			char *myntBuff=new char[40];
+			char *tempNtBuff=new char[40];
+			char *tempTS=new char[40];
+			DEBUG('q',"ntThread %d got message from other newtowrking threads %d\n", ntThreadMailboxID,MailBoxNo);
+			//
+			//message = t+TimeStamp
+			//Copy the input message to temp buff
+			strcpy(tempNtBuff,ntRespBuffer);
+			//get the first message in packet data
+			char *cTS=strtok(tempNtBuff,";");
+			//DEBUG('q',"cTS =..........................................................%s\n",cTS);
+			//Maintain the heartbeat if this is not a 'heartbeat' message itself
+			// if cTS=t, it is a heart beat
+			if(strcmp(cTS,"t")!=0)
+			{
+				// If the message is not heartbeat, send the heartbeat again and process any message!
+				myTimeStamp=getTheTimeStamp();
+				char t='t';
+				//DEBUG('q',"Current time is %ld\n", myTimeStamp);
+				//message = t+TimeStamp
+				sprintf(tempTS,"%c;%ld;",t,myTimeStamp);
+				DEBUG('q',"%s msg is sent to %d ntThreads\n",tempTS, TotalNWThreads);
+				//for each ntThreadSend send this message!
+				//printf("Before TS send currentMailBoxID=%d\n", ntThreadMailboxID);
+				int myMB=ntThreadMailboxID;
+				for(int m=0;m<TotalNWThreads;m++)
+				{
+					outPktHdr.to = ClientID[m];
+					outMailHdr.to = ThreadID[m];
+					outMailHdr.length=strlen(tempTS)+1;
+					outMailHdr.from =myMB;
+					DEBUG('q',"Sending1600 \"%s\" to %d client ID and %d mailbox\n",tempTS,ClientID[m],ThreadID[m]);
+					if(!postOffice->Send(outPktHdr,outMailHdr,tempTS)){
+						printf("NetworkThread %d of ClientID %d Send failed!\n",ThreadID[m],ClientID[m]);
+					}
+
+					//printf("In send currentMailBoxID=%d\n", ntThreadMailboxID);
+				}
+				//printf("After TS send currentMailBoxID=%d\n", ntThreadMailboxID);
+				//Here, ClientNo and MailBoxNo are the details of incoming NT thread
+				// We are not (to be) aware of incomimg thread's 
+				//corresponding UPthread mac n Mailbox deatils
+
+				char delim=';';
+				strcpy(myntBuff,ntRespBuffer);
+				//extract the Time_STAMP
+				cTS=strtok(myntBuff,";");
+
+				//DEBUG('q',"extracted TimeStamp %s\n",cTS);
+				TimeStamp=strtol(cTS,NULL,0);
+				DEBUG('q',"extracted myTimeStamp %ld\n",TimeStamp); 
+				//Update my LastTimeStampTable for the incoming thread
+				char *pos=new char[10];
+				sprintf(pos,"%d%d",ClientNo,MailBoxNo);
+				DEBUG('q',"pos======= %s\n",pos);
+				for(int iC=0;iC<TotalNWThreads;iC++)
+				{
+					char *RegPos=(char*)RegTable->Get(iC);
+					DEBUG('q',"RegPos======= %s\n",RegPos);
+					if(strcmp(RegPos,pos)==0)
+					{
+						LastTimeStampTable[iC].TimeStamp=TimeStamp;
+						DEBUG('q',"LST update 1..................................&&&&&&&>>>>>>>>>>>>>>>>> %ld\n",LastTimeStampTable[iC].TimeStamp);						
+						break;
+					}
+				}	
+				//Insert the msg into my Msg Q in timestamp order
+				sprintf(otherParam,"%d;%d;",ClientNo,MailBoxNo);
+				//DEBUG('q',"before otherParam=%s \n",otherParam);
+				strcat(otherParam,ntRespBuffer);
+				//DEBUG('q'," otherParam=%s \n",otherParam);
+				DEBUG('q',"insertin %s to the sorted Q\n",otherParam);
+				msgQ->SortedInsert1(otherParam, TimeStamp); 
+				//delete []otherParam;
+			}	
+			else if (strcmp(cTS,"t")==0)
+			{
+				//just update my LastTimeStampTable and get out!
+				//get the time stamp from incoming message of format t;timestamp
+				//message = t+TimeStamp
+				char *currTS=strtok(NULL,";");
+				myTimeStamp=strtol(currTS,NULL,0);
+				char *pos=new char[10];
+				sprintf(pos,"%d%d",ClientNo,MailBoxNo);
+				for(int iC=0;iC<TotalNWThreads;iC++)
+				{
+					char *RegPos=(char*)RegTable->Get(iC);
+					if(strcmp(RegPos,pos)==0)
+					{
+						LastTimeStampTable[iC].TimeStamp=myTimeStamp;
+						DEBUG('q',"LST update 2..................................&&&&&&&>>>>>>>>>>>>>>>>> %ld\n",LastTimeStampTable[iC].TimeStamp);						
+					}
+				}	
+			}
+
+			//Get the least time stamp in my table
+			unsigned long int minTS=LastTimeStampTable[0].TimeStamp;
+			for(int iC=0;iC<TotalNWThreads;iC++)
+			{ 
+				if(LastTimeStampTable[iC].TimeStamp<minTS)
+					minTS=LastTimeStampTable[iC].TimeStamp;
+			}
+
+			DEBUG('q',"Minimum TS in LastTimeStampTable is %d\n", minTS);
+
+			//process "ALL" 'myMsg' in timestamp order with timestamp<=myTimeStamp
+			//Decode and Process of myMsg
+			//Extract the earlier timestamp value from my table
+			if(minTS!=0)
+			{		
+				while(true)
+				{				
+					//Get the TS in the msgQ
+					char *myMsg=new char[40]; 
+					char *tempMsg;
+					tempMsg=(char*)msgQ->Remove();
+					if(tempMsg==NULL)
+					break;
+					strcpy(myMsg,tempMsg);
+					char *currentTS=strtok(tempMsg,";");
+					currentTS=strtok(NULL,";");
+					currentTS=strtok(NULL,";");
+					unsigned long int myTS=strtol(currentTS,NULL,0);
+					DEBUG('q',"extracted message from the sorted Q %s\n",myMsg);
+					//if the TS in the msg list<= time in  my LST
+					if(myTS<=minTS)
+					{
+						ntThreadLock->Acquire();
+							int currentMailBoxID=ntThreadMailboxID;
+						//printf("Before decode  message currentMailBoxID=%d\n", currentMailBoxID);
+						DEBUG('q',"inside ------------- extracted message from the sorted Q %s and ntThreadMailboxID %d\n",myMsg,ntThreadMailboxID);
+						DecodeMsg(myMsg,SvrLocks,SvrCV,SvrMV, WaitingLockInCV, ServerCVWaitQ, SvrLockWaitQ,&SrvLockCounter,&SrvCVCounter,&SrvMVCounter,ntThreadMailboxID);	
+						ntThreadLock->Release();
+					}
+					else 
+					{
+						msgQ->Append((void*)myMsg);
+						DEBUG('q',"Appended message to the Q %s\n",myMsg);
+						break; 
+						
+					} 
+					//delete []myMsg;
+				} 
+			}
+				//return;
+/* 			delete []tempNtBuff;
+			delete []tempTS;
+			delete []myntBuff; */
+		}
+		//End of Total Event ordering!
+	} 
+}
+
+unsigned long int getTheTimeStamp()
+{
+	struct timeval tval;  
+	struct timezone tzone;  
+	struct tm *tm;  
+	
+	gettimeofday(&tval, NULL);
+	return((unsigned long int)(tval.tv_usec + tval.tv_sec*1000000));  
+	//return((unsigned long int)((tval.tv_sec - 1290829673) * 16384+(tval.tv_usec/100)));  
+}
+
+void DecodeMsg(char *buffer, SvrLockData_t *SvrLocks, SvrCVData_t *SvrCV,SvrMVData_t  *SvrMV, int *WaitingLockInCV, \
+List **ServerCVWaitQ, List **SvrLockWaitQ,int *SrvLockCounter, int *SrvCVCounter, int *SrvMVCounter,int ntThreadMailboxID)
+{			
+
+	//Add code to decode the string that is passed from the client
+	//Get the syscall type and call that particular syscall
+	char *BrokenStr=NULL;
+	char *cSCtype=NULL;
+	int iSCtype=-1;
+	int ClientID=-1;
+	int ThreadID=-1;
+	char *FirstParam=NULL;//Which could be LockName or ID
+	char *SecondParam=NULL;//Which Could be CV name or ID
+	char *Temp=NULL;
+	int LockID=-1;
+	int CvID=-1;
+	int MVID=-1;
+	int MVValue=-1;
+	//Incoming msg structure
+	//clientID+MailBoxID+timestamp+req_type+other_parameters
+	//Remove TS as it is not required here
+	DEBUG('q',"INSIDE DECODE: message to procesed is %s\n",buffer);
+   DEBUG('q',"INSIDE DECODE: message to procesed is %s\n",buffer);
+	char *cTS=strtok(buffer,";");
+	ClientID=atoi(cTS);	
+	cTS=strtok(NULL,";");
+	ThreadID=atoi(cTS);	
+	cSCtype=strtok(NULL,";");
+	cSCtype=strtok(NULL,";");
+/* 	printf("%s\n",cSCtype);
+	FirstParam=strtok(NULL,";");
+	SecondParam=strtok(NULL,";");
+	Temp=strtok(NULL,";");
+	ClientID=atoi(Temp);
+	Temp=strtok(NULL,";");
+	ThreadID=atoi(Temp);
+	printf("%s\n",LockName);
+	CVName=strtok(NULL,";"); */
+
+	iSCtype=atoi(cSCtype);
+	DEBUG('q',"request type .....................iSCtype %d\n",iSCtype);
+	switch(iSCtype)
+	{
+		case SC_CreateLock:	FirstParam=strtok(NULL,";");
+												ServerCreateLock(ClientID,ThreadID,FirstParam,SvrLocks,SvrCV,SvrMV,WaitingLockInCV,\
+												ServerCVWaitQ,SvrLockWaitQ,SrvLockCounter, SrvCVCounter, SrvMVCounter,ntThreadMailboxID);
+												break;
+												
+		case SC_Acquire:  	FirstParam=strtok(NULL,";");
+												LockID=atoi(FirstParam);
+												ServerAcquireLock(ClientID,ThreadID,LockID,SvrLocks,SvrCV,SvrMV,WaitingLockInCV,\
+												ServerCVWaitQ,SvrLockWaitQ,SrvLockCounter, SrvCVCounter, SrvMVCounter,ntThreadMailboxID);
+												break;	
+												
+		case SC_Release:  	FirstParam=strtok(NULL,";");
+												LockID=atoi(FirstParam);
+												ServerReleaseLock(ClientID,ThreadID,LockID,SvrLocks,SvrCV,SvrMV,WaitingLockInCV,\
+												ServerCVWaitQ,SvrLockWaitQ,SrvLockCounter, SrvCVCounter, SrvMVCounter,ntThreadMailboxID);
+												break;
+												
+		case SC_DestroyLock:  FirstParam=strtok(NULL,";");
+													LockID=atoi(FirstParam);
+													ServerDestroyLock(ClientID,ThreadID,LockID,SvrLocks,SvrCV,SvrMV,WaitingLockInCV,\
+													ServerCVWaitQ,SvrLockWaitQ,SrvLockCounter, SrvCVCounter, SrvMVCounter,ntThreadMailboxID);
+													break;	
+													
+		case SC_CreateCondition:FirstParam=strtok(NULL,";");
+														ServerCreateCondition(ClientID,ThreadID,FirstParam,SvrLocks,SvrCV,SvrMV,\
+														WaitingLockInCV,ServerCVWaitQ,SvrLockWaitQ,SrvLockCounter, SrvCVCounter, SrvMVCounter,ntThreadMailboxID);
+														break;	
+														
+		case SC_DestroyCondition: FirstParam=strtok(NULL,";");
+															CvID=atoi(FirstParam);
+															ServerDestroyCondition(ClientID,ThreadID,CvID,SvrLocks,SvrCV,SvrMV,\
+															WaitingLockInCV,ServerCVWaitQ,SvrLockWaitQ,SrvLockCounter, SrvCVCounter, SrvMVCounter,ntThreadMailboxID);
+															break;
+															
+		case SC_Wait:  	FirstParam=strtok(NULL,";");
+										SecondParam=strtok(NULL,";");
+										LockID=atoi(FirstParam);
+										CvID=atoi(SecondParam);
+										ServerWait(ClientID,ThreadID,LockID,CvID,SvrLocks,SvrCV,SvrMV,WaitingLockInCV,ServerCVWaitQ,\
+										SvrLockWaitQ,SrvLockCounter, SrvCVCounter, SrvMVCounter,ntThreadMailboxID);
+										break;	
+		case SC_Signal: FirstParam=strtok(NULL,";");
+										SecondParam=strtok(NULL,";");
+										LockID=atoi(FirstParam);
+										CvID=atoi(SecondParam);
+										ServerSignal(ClientID,ThreadID,LockID,CvID,SvrLocks,SvrCV,SvrMV,WaitingLockInCV,\
+										ServerCVWaitQ,SvrLockWaitQ,SrvLockCounter, SrvCVCounter, SrvMVCounter,ntThreadMailboxID);
+										break;		
+		case SC_Broadcast:  FirstParam=strtok(NULL,";");
+												SecondParam=strtok(NULL,";");
+												LockID=atoi(FirstParam);
+												CvID=atoi(SecondParam);
+												ServerBroadcast(ClientID,ThreadID,LockID,CvID,SvrLocks,SvrCV,SvrMV,\
+												WaitingLockInCV,ServerCVWaitQ,SvrLockWaitQ,SrvLockCounter, SrvCVCounter, SrvMVCounter,ntThreadMailboxID);
+												break;	
+		case SC_CreateMV:		FirstParam=strtok(NULL,";");
+												ServerCreateMV(ClientID,ThreadID,FirstParam,SvrLocks,SvrCV,SvrMV,WaitingLockInCV,\
+												ServerCVWaitQ,SvrLockWaitQ,SrvLockCounter, SrvCVCounter, SrvMVCounter,ntThreadMailboxID);
+												break;
+		case SC_DestroyMV:	FirstParam=strtok(NULL,";");
+												ServerDestroyMV(ClientID,ThreadID,MVID,SvrLocks,SvrCV,SvrMV,WaitingLockInCV,\
+												ServerCVWaitQ,SvrLockWaitQ,SrvLockCounter, SrvCVCounter, SrvMVCounter,ntThreadMailboxID);
+												break;
+		case SC_SetMV:		FirstParam=strtok(NULL,";");
+											SecondParam=strtok(NULL,";");
+											MVID=atoi(FirstParam);
+											MVValue=atoi(SecondParam);
+											ServerSetMV(ClientID,ThreadID,MVID,MVValue,SvrLocks,SvrCV,SvrMV,WaitingLockInCV,\
+											ServerCVWaitQ,SvrLockWaitQ,SrvLockCounter, SrvCVCounter, SrvMVCounter,ntThreadMailboxID);
+											break;
+		case SC_GetMV:		FirstParam=strtok(NULL,";");
+											MVID=atoi(FirstParam); 
+											ServerGetMV(ClientID,ThreadID,MVID,SvrLocks,SvrCV,SvrMV,WaitingLockInCV,ServerCVWaitQ,\
+											SvrLockWaitQ,SrvLockCounter, SrvCVCounter, SrvMVCounter,ntThreadMailboxID);
+											break;								
+		default: printf("Server unable to handle the system calls\n");
+						 break;
+	}
+
+}
+
+int ServerCreateLock(int ClientID, int ThreadID,char *LockName,SvrLockData_t *SvrLocks, SvrCVData_t *SvrCV,\
+SvrMVData_t  *SvrMV, int *WaitingLockInCV, List **ServerCVWaitQ, List **SvrLockWaitQ,int *SrvLockCounter, \
+int *SrvCVCounter, int *SrvMVCounter,int ntThreadMailboxID)
+{
+	char *SrvBuffer=new char[100];
+	//printf("%s\n",LockName);
+	// outPktHdr.to = ClientID;
+	// outMailHdr.to = ThreadID;
+	for(int i=0;i<(*SrvLockCounter);i++)
+	{
+		
+		if(SvrLocks[i].LockName!=NULL)
+		{
+			//printf("ForLoop:SvrLocks[%d].LockName=%s\n",i,SvrLocks[i].LockName);
+			if(strcmp(SvrLocks[i].LockName,LockName)==0)
+			{
+				//printf("%s locks already exists in the server!\n",LockName);
+				//Just return the lock ID to the client- No lock creating stuff
+				//or throwing error
+				sprintf(SrvBuffer,"%d",i);
+				SvrLocks[i].UsageCntr++;
+				RespondToClient(SrvBuffer,ClientID,ThreadID,ntThreadMailboxID);
+				delete []SrvBuffer;
+				return 1;
+			}
+		}
+	}
+	if((*SrvLockCounter)<MAXLOCKS)
+	{
+		SvrLocks[(*SrvLockCounter)].UsageCntr++;
+		SvrLocks[(*SrvLockCounter)].Status=FREE;
+		strcpy(SvrLocks[(*SrvLockCounter)].LockName,LockName);
+		//SvrLocks[SrvLockCounter].LockName=LockName;
+		DEBUG('q',"%s lock successfully created!\n",LockName);
+		sprintf(SrvBuffer,"%d",(*SrvLockCounter));
+		(*SrvLockCounter)++;
+	}
+	else
+	{
+		printf("Error:Reached maximum locks!\n");
+		//sprintf(SrvBuffer,"Error:Reached maximum locks!");
+		sprintf(SrvBuffer,"%d",FAILURE);
+	}
+	RespondToClient(SrvBuffer,ClientID,ThreadID,ntThreadMailboxID);
+	delete []SrvBuffer;
+	return 1;
+}
+
+
+int ServerAcquireLock(int ClientID, int ThreadID,int LockID,SvrLockData_t *SvrLocks,\
+ SvrCVData_t *SvrCV,SvrMVData_t  *SvrMV, int *WaitingLockInCV, List **ServerCVWaitQ,\
+ List **SvrLockWaitQ,int *SrvLockCounter, int *SrvCVCounter, int *SrvMVCounter,int ntThreadMailboxID)
+{
+	int ErrorFlag=0;
+	int iSuccess=0;
+	char *SrvBuffer=new char[100];
+	int LockOwnerID;
+	// outPktHdr.to = ClientID;
+	// outMailHdr.to = ThreadID;
+	if(LockID<0 || LockID>MAXLOCKS)
+	{
+		ErrorFlag=ErrorFlag-2;//To return -1
+		//sprintf(SrvBuffer,"ERROR!!Invalid Lock ID %d",LockID);
+		sprintf(SrvBuffer,"%d",FAILURE);
+		printf("ERROR!!Invalid Lock ID ErrorID:%d\n",ErrorFlag);
+		RespondToClient(SrvBuffer,ClientID,ThreadID,ntThreadMailboxID);
+		delete []SrvBuffer;
+		return ErrorFlag;
+	}
+	
+	if(isHeldByCurrentThread(LockID,ClientID,ThreadID,SvrLocks)==true)
+	{
+		ErrorFlag=ErrorFlag-2;//To return -1
+		//sprintf(SrvBuffer,"ERROR!! Lock ID %d already owns the lock",LockID);
+		sprintf(SrvBuffer,"%d",FAILURE);
+		printf("Present %d ClientID and %d ThreadID msg processing.!!\n",netname,ntThreadMailboxID);
+		printf("ERROR!!%d ClientID and %d ThreadID already own the lock!!\n",ClientID,ThreadID);
+		RespondToClient(SrvBuffer,ClientID,ThreadID,ntThreadMailboxID);
+		delete []SrvBuffer;
+		return ErrorFlag;
+	} 
+	
+	if((LockID>=0)&&(LockID<MAXLOCKS))
+	{
+		if(SvrLocks[LockID].Status!=VOID)
+		{
+			//If lock is free
+			if(SvrLocks[LockID].Status==FREE)
+			{
+				// make lock busy
+				SvrLocks[LockID].Status=BUSY;
+				//SvrLocks[LockID].UsageCntr++;
+				//making currentThread lock owner
+				SvrLocks[LockID].LockOwner=ClientID;
+				SvrLocks[LockID].LockThreadID=ThreadID;
+				//Pack the message for Client
+				sprintf(SrvBuffer,"%d",SUCCESS);
+				//sDEBUG('q',SrvBuffer,"LockID %d is successfully acquired",LockID);
+				DEBUG('q',"LockID %d is successfully acquired\n",LockID);
+				RespondToClient(SrvBuffer,ClientID,ThreadID,ntThreadMailboxID);
+			}
+			else
+			{
+				//If not same thread, put the incoming thread on Q
+				//SvrLocks[LockID].UsageCntr++;				
+				SvrLockWaitQ[LockID]->Append((void *)ClientID);
+				SvrLockWaitQ[LockID]->Append((void *)ThreadID);
+			}
 		}
 		else
 		{
-			//physical page not available
-			bitMapLock->Release();
-			ppn=evictApage1(vpn);
+			ErrorFlag=1;
 		}
-	//loading exec
-		currentThread->space->exec->ReadAt(&(machine->mainMemory[ppn*PageSize]),PageSize,currentThread->space->myPageTable[vpn].file_offset);
-		ipt[ppn].physicalPage=ppn;
-		ipt[ppn].virtualPage=vpn;
-		ipt[ppn].valid = true;
-		ipt[ppn].use = false;
-		ipt[ppn].dirty = false;
-		ipt[ppn].readOnly = false;
-		ipt[ppn].ProcID=currentThread->currentProcID;
-		iptlock->Release();
+	}
+	else
+	{
+		ErrorFlag=1;
+	}
+	if(ErrorFlag)
+	{
+
+		ErrorFlag=ErrorFlag-2;//To return -1
+		sprintf(SrvBuffer,"%d",ErrorFlag);
+		RespondToClient(SrvBuffer,ClientID,ThreadID,ntThreadMailboxID);
+		printf("ERROR!!AcquireLock Failed ErrorID:%d\n",ErrorFlag);
+		//printf("Sending \"%s\" to %d\n",SrvBuffer,outMailHdr.from);
+
+	}		
+	
+	delete []SrvBuffer;
+	return ErrorFlag;
+}
+
+
+int ServerReleaseLock(int ClientID, int ThreadID,int LockID,SvrLockData_t *SvrLocks, \
+SvrCVData_t *SvrCV,SvrMVData_t  *SvrMV, int *WaitingLockInCV, List **ServerCVWaitQ, \
+List **SvrLockWaitQ,int *SrvLockCounter, int *SrvCVCounter, int *SrvMVCounter,int ntThreadMailboxID)
+{
+	int ErrorFlag=0;
+	int iSuccess=0;
+	char *SrvBuffer=new char[100];
+	int LockOwnerID;
+	// outPktHdr.to = ClientID;
+	// outMailHdr.to = ThreadID;
+	int nextMacNo;
+	int nextMailBoxNO;
+
+	if(LockID<0 || LockID>MAXLOCKS)
+	{
+		ErrorFlag=ErrorFlag-2;//To return -1
+		//sprintf(SrvBuffer,"ERROR!!Invalid Lock ID %d",LockID);
+		sprintf(SrvBuffer,"%d",FAILURE);
+		printf("ERROR!!Invalid Lock ID ErrorID:%d\n",ErrorFlag);
+		RespondToClient(SrvBuffer,ClientID,ThreadID,ntThreadMailboxID);
+		delete []SrvBuffer;
+		return ErrorFlag;
+	}
+	
+	if(!(isHeldByCurrentThread(LockID,ClientID,ThreadID,SvrLocks)))
+	{
+		ErrorFlag=ErrorFlag-2;//To return -1
+		sprintf(SrvBuffer,"%d",FAILURE);
+		//sprintf(SrvBuffer,"ERROR!!Releasing a lock that I do not own!!  Lock ID %d",LockID);
+		printf("Present %d ClientID and %d ThreadID msg processing.!!\n",netname,ntThreadMailboxID);
+		printf("ERROR!!%d ClientID and %d ThreadID DONOT own the lock!!\n",ClientID,ThreadID);
+		RespondToClient(SrvBuffer,ClientID,ThreadID,ntThreadMailboxID);
+		delete []SrvBuffer;
+		return ErrorFlag;
+	} 
+
+
+	if((LockID>=0)&&(LockID<MAXLOCKS))
+	{
+		if(SvrLocks[LockID].Status!=VOID)
+		{
+			//make this new mac ID and Mail Box the new owner of the lock
+			if(!(SvrLockWaitQ[LockID]->IsEmpty()))
+			{
+				//sprintf(SrvBuffer,"LockID %d is successfully released in Q",LockID);
+				sprintf(SrvBuffer,"%d",SUCCESS);
+				DEBUG('q',"LockID %d is successfully released (in Q)\n",LockID);
+				nextMacNo=(int)SvrLockWaitQ[LockID]->Remove();
+				nextMailBoxNO=(int)SvrLockWaitQ[LockID]->Remove();
+				// outPktHdr.to = *nextMacNo;
+				// outMailHdr.to = *nextMailBoxNO;
+				SvrLocks[LockID].LockOwner=nextMacNo;
+				SvrLocks[LockID].LockThreadID=nextMailBoxNO;
+				SvrLocks[LockID].Status=BUSY;
+				//SvrLocks[LockID].UsageCntr--;					
+				RespondToClient(SrvBuffer,nextMacNo,nextMailBoxNO,ntThreadMailboxID);
+			}
+			else  
+			{
+				//SvrLocks[LockID].UsageCntr--;
+				SvrLocks[LockID].Status=FREE;
+				SvrLocks[LockID].LockOwner=-1;
+				SvrLocks[LockID].LockThreadID=-1;
+				sprintf(SrvBuffer,"%d",SUCCESS);
+				//printf("released lock for wait call...........\n");
+			  //sprintf(SrvBuffer,"LockID %d is successfully released",LockID);
+				DEBUG('q',"LockID %d is successfully released \n",LockID);
+				//RespondToClient(SrvBuffer,ClientID,ThreadID);
+			}
+			RespondToClient(SrvBuffer,ClientID,ThreadID,ntThreadMailboxID);
+		}
+		else
+		{
+			ErrorFlag=1;
+		}
+	}
+	else
+	{
+		ErrorFlag=1;
+	}
+	if(ErrorFlag)
+	{
+
+		ErrorFlag=ErrorFlag-2;//To return -1
+		//sprintf(SrvBuffer,"ERROR!!Release lock failed for Lock ID %d",LockID);
+		sprintf(SrvBuffer,"%d",FAILURE);
+		printf("ERROR!!Release lock failed for Lock ID %d",LockID);
+		RespondToClient(SrvBuffer,ClientID,ThreadID,ntThreadMailboxID);
+	}			
+	delete []SrvBuffer;
+	return ErrorFlag;
+}
+
+int ServerDestroyLock(int ClientID, int ThreadID,int LockID,SvrLockData_t *SvrLocks,\
+ SvrCVData_t *SvrCV,SvrMVData_t  *SvrMV, int *WaitingLockInCV, List **ServerCVWaitQ, \
+ List **SvrLockWaitQ,int *SrvLockCounter, int *SrvCVCounter, int *SrvMVCounter,int ntThreadMailboxID)
+{
+	int ErrorFlag=0;
+	int iSuccess=0;
+	char *SrvBuffer=new char[100];
+	int LockOwnerID;
+	// outPktHdr.to = ClientID;
+	// outMailHdr.to = ThreadID;
+
+	if(LockID<0 || LockID>MAXLOCKS)
+	{
+		ErrorFlag=ErrorFlag-2;//To return -1
+		//sprintf(SrvBuffer,"ERROR!!Invalid Lock ID %d",LockID);
+		sprintf(SrvBuffer,"%d",FAILURE);
+		printf("ERROR!!Invalid Lock ID ErrorID:%d\n",ErrorFlag);
+		RespondToClient(SrvBuffer,ClientID,ThreadID,ntThreadMailboxID);
+		delete []SrvBuffer;
+		return ErrorFlag;
+	}
+	if((SvrLocks[LockID].UsageCntr==1) && (SvrLocks[LockID].Status==FREE))
+	{
+		SvrLocks[LockID].UsageCntr=0;
+		SvrLocks[LockID].LockOwner=-1;
+		SvrLocks[LockID].LockName=NULL;
+		SvrLocks[LockID].Status=VOID;
+		//sprintf(SrvBuffer,"LockID %d is successfully destroyed\n",LockID);
+		sprintf(SrvBuffer,"%d",SUCCESS);
+		DEBUG('q',"LockID %d is successfully destroyed\n",LockID);
+		RespondToClient(SrvBuffer,ClientID,ThreadID,ntThreadMailboxID);
+		delete []SrvBuffer;
+		return SUCCESS;
+	}
+	
+	else
+	{
+		ErrorFlag=ErrorFlag-2;//To return -1
+		//sprintf(SrvBuffer,"ERROR!!Attempting to delete BUSY lock:%d",LockID);
+		sprintf(SrvBuffer,"%d",FAILURE);
+		printf("ERROR!!Attempting to delete BUSY lock or a lock which is not valid:%d\n",ErrorFlag);
+		if(SvrLocks[LockID].Status!=BUSY)
+		   SvrLocks[LockID].UsageCntr--;
+		   
+		RespondToClient(SrvBuffer,ClientID,ThreadID,ntThreadMailboxID);
+		delete []SrvBuffer;
+		return ErrorFlag;
+	}
+	
+}
+
+/******************************************************************
+Create Condition Varaible SERVER STUB
+*******************************************************************/
+int ServerCreateCondition(int ClientID, int ThreadID,char *CvName,SvrLockData_t *SvrLocks,\
+ SvrCVData_t *SvrCV,SvrMVData_t  *SvrMV, int *WaitingLockInCV, List **ServerCVWaitQ,\
+ List **SvrLockWaitQ,int *SrvLockCounter, int *SrvCVCounter, int *SrvMVCounter,int ntThreadMailboxID)
+{
+	char *SrvBuffer=new char[100];
+	// outPktHdr.to = ClientID;
+	// outMailHdr.to = ThreadID;
+	//printf("%s\n",CVName);
+	for(int i=0;i<(*SrvCVCounter);i++)
+	{
+		if(SvrCV[i].CVName!=NULL)
+		{
+			if(strcmp(SvrCV[i].CVName,CvName)==0)
+			{
+				DEBUG('q',"%s CV already exists in the server!\n",CvName);
+				//Just return the lock ID to the client- No lock creating stuff
+				//or throwing error
+				sprintf(SrvBuffer,"%d",i);
+				RespondToClient(SrvBuffer,ClientID,ThreadID,ntThreadMailboxID);
+				SvrCV[i].UsageCntr++;
+				delete []SrvBuffer;
+				return 1;
+			}
+		}
+	}
+	if((*SrvCVCounter)<MAXCV)
+	{
+		SvrCV[(*SrvCVCounter)].UsageCntr++;
+		SvrCV[(*SrvCVCounter)].Status=FREE;
+		strcpy(SvrCV[(*SrvCVCounter)].CVName,CvName);
+		DEBUG('q',"%s CV successfully created!\n",CvName);
+		sprintf(SrvBuffer,"%d",(*SrvCVCounter));
+		(*SrvCVCounter)++;
+	}
+	else
+	{
+		//sprintf(SrvBuffer,"Error:Reached maximum CV!");
+		printf("Error:Reached maximum CV!\n");
+		sprintf(SrvBuffer,"%d",FAILURE);
+		SrvBuffer="-1";
+	}
+	RespondToClient(SrvBuffer,ClientID,ThreadID,ntThreadMailboxID);
+	delete []SrvBuffer;
+	return 1;
+}
+
+/******************************************************************
+Destroy Condition Varaible SERVER STUB
+*******************************************************************/
+int ServerDestroyCondition(int ClientID, int ThreadID,int CvID,SvrLockData_t *SvrLocks,\
+ SvrCVData_t *SvrCV,SvrMVData_t  *SvrMV, int *WaitingLockInCV, List **ServerCVWaitQ,\
+ List **SvrLockWaitQ,int *SrvLockCounter, int *SrvCVCounter, int *SrvMVCounter,int ntThreadMailboxID)
+{
+	int ErrorFlag=0;
+	int iSuccess=0;
+	char *SrvBuffer=new char[100];
+	int LockOwnerID;
+	// outPktHdr.to = ClientID;
+	// outMailHdr.to = ThreadID;
+
+	if(CvID<0 || CvID>MAXLOCKS)
+	{
+		ErrorFlag=ErrorFlag-2;//To return -1
+		//printf(SrvBuffer,"ERROR!!Invalid CV ID%d",CvID);
+		sprintf(SrvBuffer,"%d",FAILURE);
+		printf("ERROR!!Invalid CV ID ErrorID:%d\n",ErrorFlag);
+		RespondToClient(SrvBuffer,ClientID,ThreadID,ntThreadMailboxID);
+		delete []SrvBuffer;
+		return ErrorFlag;
+	}
+	if((SvrCV[CvID].UsageCntr==1) && (SvrCV[CvID].Status==FREE))
+	{
+		SvrCV[CvID].UsageCntr=0;
+		SvrCV[CvID].CVName="";
+		SvrCV[CvID].Status=VOID;
+		SvrCV[CvID].CVOwner=-1;
+		DEBUG('q',"Deleted CV ID %d successfully\n",CvID);
+		sprintf(SrvBuffer,"%d",SUCCESS);
+		//sprintf(SrvBuffer,"%d",FAILURE);
+		RespondToClient(SrvBuffer,ClientID,ThreadID,ntThreadMailboxID);
+		delete []SrvBuffer;
+		return SUCCESS;
+	}
+	
+	else
+	{
+		ErrorFlag=ErrorFlag-2;//To return -1
+		//sprintf(SrvBuffer,"ERROR!!Attempting to delete BUSY CV ID%d",CvID);
+		sprintf(SrvBuffer,"%d",FAILURE);
+		printf("ERROR!!Attempting to delete BUSY CV or invalid cv:%d\n",ErrorFlag);
+		SvrCV[CvID].UsageCntr--;
+		RespondToClient(SrvBuffer,ClientID,ThreadID,ntThreadMailboxID);
+		delete []SrvBuffer;
+		return ErrorFlag;
+	}
+	
+}
+/******************************************************************
+ Condition Varaible WAIT SERVER STUB
+*******************************************************************/
+int ServerWait(int ClientID, int ThreadID,int LockID,int CvID,SvrLockData_t *SvrLocks,\
+ SvrCVData_t *SvrCV,SvrMVData_t  *SvrMV, int *WaitingLockInCV, List **ServerCVWaitQ,\
+ List **SvrLockWaitQ,int *SrvLockCounter, int *SrvCVCounter, int *SrvMVCounter,int ntThreadMailboxID)
+{
+	int ErrorFlag=0;
+	int iSuccess=0;
+	char *SrvBuffer=new char[100];
+	int LockOwnerID;
+	int IsLockAcquired=0;
+	int IsCVCreated=0;
+	// outPktHdr.to = ClientID;
+	// outMailHdr.to = ThreadID;
+	int nextClientID;
+	int nextThreadID;
+	
+	if(LockID<0 || LockID>MAXLOCKS)
+	{
+		ErrorFlag=ErrorFlag-2;//To return -1
+		//sprintf(SrvBuffer,"ERROR!!Waiting on Invalid LOCK %d",LockID);
+		sprintf(SrvBuffer,"%d",FAILURE);
+		printf("ERROR!!Waiting on Invalid LOCK %d",LockID);
+		RespondToClient(SrvBuffer,ClientID,ThreadID,ntThreadMailboxID);
+		delete []SrvBuffer;
+		return ErrorFlag;
+	}
+	
+	if(CvID<0 || CvID>MAXCV)
+	{
+		ErrorFlag=ErrorFlag-2;//To return -1
+		//sprintf(SrvBuffer,"ERROR!!Waiting on Invalid CV %d",CvID);
+		sprintf(SrvBuffer,"%d",FAILURE);
+		printf("ERROR!!Waiting on Invalid CV %d",CvID);
+		RespondToClient(SrvBuffer,ClientID,ThreadID,ntThreadMailboxID);
+		delete []SrvBuffer;
+		return ErrorFlag;
+	}
+	
+	
+	if(isHeldByCurrentThread(LockID,ClientID,ThreadID,SvrLocks)!=true)
+	{
+		ErrorFlag=ErrorFlag-2;//To return -1
+		//sprintf(SrvBuffer,"ERROR!! Lock ID %d already owns the lock",LockID);
+		sprintf(SrvBuffer,"%d",FAILURE);
+		printf("ERROR: Cannot go on wait as i do not own the lock the ErrorID:%d\n",ErrorFlag);
+		RespondToClient(SrvBuffer,ClientID,ThreadID,ntThreadMailboxID);
+		delete []SrvBuffer;
+		return ErrorFlag;
+	} 
+	 //Is this the first thread calling the wait?
+	if(WaitingLockInCV[CvID]<0)
+	{
+		//First thread to call wait; Save the lock
+		WaitingLockInCV[CvID]=LockID;
+	}
+	//Is input conditionLock matches the saved lock?
+	if(WaitingLockInCV[CvID]!=LockID)
+	{
+		ErrorFlag=ErrorFlag-2;//To return -1
+		sprintf(SrvBuffer,"%d",FAILURE);
+		//sprintf(SrvBuffer,"ERROR: In wait,input conditionLock do not matches wirh the saved lock");
+		printf("ERROR!!In wait,input conditionLock do not matches wirh the saved lock:%d\n",ErrorFlag);
+		RespondToClient(SrvBuffer,ClientID,ThreadID,ntThreadMailboxID);
+		delete []SrvBuffer;
+		return ErrorFlag;
+	}
+	
+	if(WaitingLockInCV[CvID]==LockID && SvrCV[CvID].Status!=VOID)
+	{
+		//Everything is OK to be waiter
+    //Add thread to condition wait queue	
+		// char *wBuf=new char[100];
+		// sprintf(wBuf,"%d;%d;%d;%d",ClientID,ThreadID,LockID,CvID);
+		ServerCVWaitQ[CvID]->Append((void *)ClientID);
+		ServerCVWaitQ[CvID]->Append((void *)ThreadID);
+		ServerCVWaitQ[CvID]->Append((void*)LockID);
+		//ServerCVWaitQ[CvID]->Append(CvID);
+		//SvrCV[CvID].UsageCntr++;
+		DEBUG('q',"Trying to release Releasing the lock %d in wait\n",LockID);
+		if(!(SvrLockWaitQ[LockID]->IsEmpty()))
+		{
+			sprintf(SrvBuffer,"%d",SUCCESS);
+			DEBUG('q',"LockID %d is successfully released",LockID);
+			nextClientID=(int)SvrLockWaitQ[LockID]->Remove();
+			nextThreadID=(int)SvrLockWaitQ[LockID]->Remove();
+			// outPktHdr.to = nextClientID;
+			// outMailHdr.to = nextThreadID;
+			SvrLocks[LockID].LockOwner=nextClientID;
+			SvrLocks[LockID].LockThreadID=nextThreadID;
+			SvrLocks[LockID].Status=BUSY;
+			DEBUG('q',"LockID %d is Acquired in WAIT by cl:%d MB%d\n",LockID,ClientID,ThreadID);
+			//SvrLocks[LockID].UsageCntr--;					
+			RespondToClient(SrvBuffer,nextClientID,nextThreadID,ntThreadMailboxID);
+		}
+		else
+		{
+			//SvrLocks[LockID].UsageCntr--;
+			DEBUG('q',"Releasing the lock %d in wait\n",LockID);
+			SvrLocks[LockID].Status=FREE;
+			SvrLocks[LockID].LockOwner=-1;
+			SvrLocks[LockID].LockThreadID=-1;
+			SvrCV[CvID].Status=BUSY;
+			//printf("Temporarily LockID %d is  released in wait...............",LockID);
+		}
+	}
+	else
+	{
+		ErrorFlag=ErrorFlag-2;//To return -1
+		sprintf(SrvBuffer,"%d",FAILURE);
+		//sprintf(SrvBuffer,"ERROR!!Attempting wait on invalid lock or CV");
+		printf("ERROR!!Attempting wait on invalid lock or CV ErrorID:%d\n",ErrorFlag);
+		RespondToClient(SrvBuffer,ClientID,ThreadID,ntThreadMailboxID);
+	}
+	////////////
+	
+	delete []SrvBuffer;
+	return ErrorFlag;
+}
+
+
+
+/******************************************************************
+ Condition Varaible Signal SERVER STUB
+*******************************************************************/
+int ServerSignal(int ClientID, int ThreadID,int LockID,int CvID,SvrLockData_t *SvrLocks,\
+ SvrCVData_t *SvrCV,SvrMVData_t  *SvrMV, int *WaitingLockInCV, List **ServerCVWaitQ,\
+ List **SvrLockWaitQ,int *SrvLockCounter, int *SrvCVCounter, int *SrvMVCounter,int ntThreadMailboxID)
+{
+	int ErrorFlag=0;
+	int iSuccess=0;
+	char *SrvBuffer=new char[100];
+	int LockOwnerID;
+	int IsLockAcquired=0;
+	int IsCVCreated=0;
+	int nextClientID;
+	int nextThreadID;
+	// outPktHdr.to = inPktHdr.from;
+	// outMailHdr.to = inMailHdr.from;
+	
+	if(LockID<0 || LockID>MAXLOCKS)
+	{
+		ErrorFlag=ErrorFlag-2;//To return -1
+		//sprintf(SrvBuffer,"ERROR!!Waiting on Invalid LOCK %d",LockID);
+		sprintf(SrvBuffer,"%d",FAILURE);
+		printf("ERROR!!Attempting wait on invalid LOCK %d",LockID);
+		RespondToClient(SrvBuffer,ClientID,ThreadID,ntThreadMailboxID);
+		delete []SrvBuffer;
+		return ErrorFlag;
+	}
+	
+	if(CvID<0 || CvID>MAXCV)
+	{
+		ErrorFlag=ErrorFlag-2;//To return -1
+		//sprintf(SrvBuffer,"ERROR!!Waiting on Invalid CV %d",CvID);
+		sprintf(SrvBuffer,"%d",FAILURE);
+		printf("ERROR!!Attempting wait on invalid %d",CvID);
+		RespondToClient(SrvBuffer,ClientID,ThreadID,ntThreadMailboxID);
+		delete []SrvBuffer;
+		return ErrorFlag;
+	}
+	
+	
+	//Is input conditionLock matches the saved lock?
+	if(WaitingLockInCV[CvID]!=LockID)
+	{
+		ErrorFlag=ErrorFlag-2;//To return -1
+		//sprintf(SrvBuffer,"ERROR: In Signal,input conditionLock do not matches wirh the saved lock");
+		sprintf(SrvBuffer,"%d",FAILURE);
+		//printf("ERROR: In Signal,input conditionLock do not matches wirh the saved lock  ErrorID:%d\n",ErrorFlag);
+		RespondToClient(SrvBuffer,ClientID,ThreadID,ntThreadMailboxID);
+		delete []SrvBuffer;
+		return ErrorFlag;
+	}
+	if(ServerCVWaitQ[CvID]->IsEmpty())
+	{
+		ErrorFlag=ErrorFlag-2;//To return -1
+		//sprintf(SrvBuffer,"No Client is waiting to signal!");
+		sprintf(SrvBuffer,"%d",FAILURE);
+		/*printf("ERROR!!No Client is waiting to signal ErrorID:%d\n",ErrorFlag);*/
+		RespondToClient(SrvBuffer,ClientID,ThreadID,ntThreadMailboxID);
+		delete []SrvBuffer;
+		return ErrorFlag;
+	}
+	if(WaitingLockInCV[CvID]==LockID && SvrCV[CvID].Status!=VOID)
+	{
+    //We know there are threads waiting in the queue
+    //Wakeup one waiter
+    //Remove one thread from Condition Wait queue
+		int nextLockID;
+		nextClientID=(int)ServerCVWaitQ[CvID]->Remove();
+		nextThreadID=(int)ServerCVWaitQ[CvID]->Remove();
+		nextLockID=(int)ServerCVWaitQ[CvID]->Remove();
+		//SvrCV[CvID].UsageCntr--;
+		if(isHeldByCurrentThread(nextLockID,nextClientID,nextThreadID,SvrLocks)==true)
+		{
+			ErrorFlag=ErrorFlag-2;//To return -1
+			//sprintf(SrvBuffer,"ERROR!! Lock ID %d already owns the lock",LockID);
+			sprintf(SrvBuffer,"%d",FAILURE);
+			printf("ERROR!!I already own the lock!! ErrorID:%d\n",ErrorFlag);
+			RespondToClient(SrvBuffer,nextClientID,nextThreadID,ntThreadMailboxID);
+			delete []SrvBuffer;
+			return ErrorFlag;
+		} 
+		if(SvrLocks[nextLockID].Status!=VOID)
+		{
+			SvrCV[CvID].Status=FREE;
+			//If lock is free
+			if(SvrLocks[nextLockID].Status==FREE)
+			{
+				// make lock busy
+				SvrLocks[nextLockID].Status=BUSY;
+				//SvrLocks[nextLockID].UsageCntr++;
+				//making currentThread lock owner
+				SvrLocks[nextLockID].LockOwner=nextClientID;
+				SvrLocks[nextLockID].LockThreadID=nextThreadID;
+				//Pack the message for Client
+				//sprintf(SrvBuffer,"LockID %d is successfully acquired",LockID);
+				sprintf(SrvBuffer,"%d",SUCCESS);
+				RespondToClient(SrvBuffer,nextClientID,nextThreadID,ntThreadMailboxID);
+				//printf("In signal...sending response to %d\n",nextClientID);
+			}
+			else
+			{
+				//If not same thread, put the incoming thread on Q
+				//SvrLocks[nextLockID].UsageCntr++;				
+				SvrLockWaitQ[nextLockID]->Append((void *)nextClientID);
+				SvrLockWaitQ[nextLockID]->Append((void *)nextThreadID);
+				//printf("In signal...HOLDING response to %d\n",nextClientID);
+			//	RespondToClient(SrvBuffer,ClientID,ThreadID,ntThreadMailboxID);
+			}
+		}
+	/* 	if(ServerCVWaitQ[CvID]->IsEmpty())
+		{
+			ServerCVWaitQ[CvID]=NULL;			
+		} */
+	}
+	else
+	{
+		ErrorFlag=ErrorFlag-2;//To return -1
+		//sprintf(SrvBuffer,"ERROR!!Attempting Signal on invalid CV or Lock ID!");
+		sprintf(SrvBuffer,"%d",FAILURE);
+		printf("ERROR!!Attempting wait on invalid CV ErrorID:%d\n",ErrorFlag);
+		RespondToClient(SrvBuffer,ClientID,ThreadID,ntThreadMailboxID);
+		delete []SrvBuffer;
+		return ErrorFlag;
+	}
+	//printf(" in signal............\n");
+	RespondToClient(SrvBuffer,ClientID,ThreadID,ntThreadMailboxID);
+	delete []SrvBuffer;
+	return ErrorFlag;	
+}
+
+/******************************************************************
+ Condition Varaible Broadcast SERVER STUB
+*******************************************************************/
+int ServerBroadcast(int ClientID, int ThreadID,int LockID,int CvID,SvrLockData_t *SvrLocks,\
+ SvrCVData_t *SvrCV,SvrMVData_t  *SvrMV, int *WaitingLockInCV, List **ServerCVWaitQ, \
+ List **SvrLockWaitQ,int *SrvLockCounter, int *SrvCVCounter, int *SrvMVCounter,int ntThreadMailboxID)
+{
+	// while there are threads, wake them up!
+	//Leave all validation to sognal
+	//Good Luck Signal - Make me proud!!
+		int ErrorFlag=0;
+		int iSuccess=0;
+		char *SrvBuffer=new char[100];
+		int LockOwnerID;
+		int IsLockAcquired=0;
+		int IsCVCreated=0;
+		int nextClientID;
+		int nextThreadID;
+	
+		if(LockID<0 || LockID>MAXLOCKS)
+		{
+			ErrorFlag=ErrorFlag-2;//To return -1
+			//sprintf(SrvBuffer,"ERROR!!Waiting on Invalid LOCK %d",LockID);
+			sprintf(SrvBuffer,"%d",FAILURE);
+			printf("ERROR!!Attempting wait on invalid LOCK %d",LockID);
+			RespondToClient(SrvBuffer,ClientID,ThreadID,ntThreadMailboxID);
+			delete []SrvBuffer;
+			return ErrorFlag;
+		}
+		
+		if(CvID<0 || CvID>MAXCV)
+		{
+			ErrorFlag=ErrorFlag-2;//To return -1
+			//sprintf(SrvBuffer,"ERROR!!Waiting on Invalid CV %d",CvID);
+			sprintf(SrvBuffer,"%d",FAILURE);
+			printf("ERROR!!Attempting wait on invalid %d",CvID);
+			RespondToClient(SrvBuffer,ClientID,ThreadID,ntThreadMailboxID);
+			delete []SrvBuffer;
+			return ErrorFlag;
+		}
+ 	// char *SrvBuffer1=new char[100];
+  // sprintf(SrvBuffer1,"%d",SUCCESS);
+	// RespondToClient(SrvBuffer1,ClientID,ThreadID,ntThreadMailboxID);
+
+	
+	while(!ServerCVWaitQ[CvID]->IsEmpty())
+	{
+		printf("Processing broadcast+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\n\n");
+		//Is input conditionLock matches the saved lock?
+		if(WaitingLockInCV[CvID]!=LockID)
+		{
+			ErrorFlag=ErrorFlag-2;//To return -1
+			//sprintf(SrvBuffer,"ERROR: In Signal,input conditionLock do not matches wirh the saved lock");
+			sprintf(SrvBuffer,"%d",FAILURE);
+			printf("ERROR: In Signal,input conditionLock do not matches wirh the saved lock  ErrorID:%d\n",ErrorFlag);
+			RespondToClient(SrvBuffer,ClientID,ThreadID,ntThreadMailboxID);
+			delete []SrvBuffer;
+			return ErrorFlag;
+		}
+		if(ServerCVWaitQ[CvID]->IsEmpty())
+		{
+			ErrorFlag=ErrorFlag-2;//To return -1
+			//sprintf(SrvBuffer,"No Client is waiting to signal!");
+			sprintf(SrvBuffer,"%d",FAILURE);
+			/*printf("ERROR!!No Client is waiting to signal ErrorID:%d\n",ErrorFlag);*/
+			RespondToClient(SrvBuffer,ClientID,ThreadID,ntThreadMailboxID);
+			delete []SrvBuffer;
+			return ErrorFlag;
+		}
+		if(WaitingLockInCV[CvID]==LockID && SvrCV[CvID].Status!=VOID)
+		{
+			//We know there are threads waiting in the queue
+			//Wakeup one waiter
+			//Remove one thread from Condition Wait queue
+			int nextLockID;
+			nextClientID=(int)ServerCVWaitQ[CvID]->Remove();
+			nextThreadID=(int)ServerCVWaitQ[CvID]->Remove();
+			nextLockID=(int)ServerCVWaitQ[CvID]->Remove();
+			//SvrCV[CvID].UsageCntr--;
+			if(isHeldByCurrentThread(nextLockID,nextClientID,nextThreadID,SvrLocks)==true)
+			{
+				ErrorFlag=ErrorFlag-2;//To return -1
+				//sprintf(SrvBuffer,"ERROR!! Lock ID %d already owns the lock",LockID);
+				sprintf(SrvBuffer,"%d",FAILURE);
+				printf("ERROR!!I already own the lock!! ErrorID:%d\n",ErrorFlag);
+				RespondToClient(SrvBuffer,nextClientID,nextThreadID,ntThreadMailboxID);
+				delete []SrvBuffer;
+				return ErrorFlag;
+			} 
+			if(SvrLocks[nextLockID].Status!=VOID)
+			{
+				SvrCV[CvID].Status=FREE;
+				//If lock is free
+				if(SvrLocks[nextLockID].Status==FREE)
+				{
+					// make lock busy
+					SvrLocks[nextLockID].Status=BUSY;
+					//SvrLocks[nextLockID].UsageCntr++;
+					//making currentThread lock owner
+					SvrLocks[nextLockID].LockOwner=nextClientID;
+					SvrLocks[nextLockID].LockThreadID=nextThreadID;
+					//Pack the message for Client
+					//sprintf(SrvBuffer,"LockID %d is successfully acquired",LockID);
+					sprintf(SrvBuffer,"%d",SUCCESS);
+					RespondToClient(SrvBuffer,nextClientID,nextThreadID,ntThreadMailboxID);
 				
-		return ppn;
-	}
-	else if(currentThread->space->myPageTable[vpn].location==2) //if page is in Stack
-	{ 
-		
-		bitMapLock->Acquire();
-		ppn = PhyMemBitMap->Find();	
-		
-		if(ppn!=-1)
-		{
-			fifoLock->Acquire();             //
-			dummyfifo[dummyfifoCnt++]=ppn;	//useful only for FIFO option		
-			fifoLock->Release();	       //
-			currentThread->space->myPageTable[vpn].physicalPage = ppn; 
-			bitMapLock->Release();
+				}
+				else
+				{
+					//If not same thread, put the incoming thread on Q
+					//SvrLocks[nextLockID].UsageCntr++;				
+					SvrLockWaitQ[nextLockID]->Append((void *)nextClientID);
+					SvrLockWaitQ[nextLockID]->Append((void *)nextThreadID);
+					
+					RespondToClient(SrvBuffer,ClientID,ThreadID,ntThreadMailboxID);
+				}
+			}
+			if(ServerCVWaitQ[CvID]->IsEmpty())
+			{
+				ServerCVWaitQ[CvID]=NULL;
+				break;
+			}
 		}
 		else
 		{
-			//physical page not found
-			bitMapLock->Release();
-			ppn=evictApage1(vpn);
+			ErrorFlag=ErrorFlag-2;//To return -1
+			//sprintf(SrvBuffer,"ERROR!!Attempting Signal on invalid CV or Lock ID!");
+			sprintf(SrvBuffer,"%d",FAILURE);
+			printf("ERROR!!Attempting wait on invalid CV ErrorID:%d\n",ErrorFlag);
+			RespondToClient(SrvBuffer,ClientID,ThreadID,ntThreadMailboxID);
+			delete []SrvBuffer;
+			return ErrorFlag;
 		}
-		ipt[ppn].physicalPage=ppn;
-		ipt[ppn].virtualPage=vpn;
-		ipt[ppn].valid = true;
-		ipt[ppn].use = false;
-		ipt[ppn].dirty = false;
-	
-		ipt[ppn].readOnly = false;
-		ipt[ppn].ProcID=currentThread->currentProcID;
-		iptlock->Release();
-		
-		return ppn;
+		//RespondToClient(SrvBuffer,ClientID,ThreadID,ntThreadMailboxID);
+		delete []SrvBuffer;
+	}
+	RespondToClient(SrvBuffer,ClientID,ThreadID,ntThreadMailboxID);
+	return 1;
+}
+
+
+
+bool isHeldByCurrentThread(int LockID,int MacID,int MailBoxID,SvrLockData_t *SvrLocks)
+{
+  bool status=false;
+	if(SvrLocks[LockID].LockOwner==MacID && SvrLocks[LockID].LockThreadID==MailBoxID)
+		status=true;
+	return status;
+}
+
+void RespondToClient(char *SrvBuffer, int MacID, int MailBoxID,int ntThreadMailboxID)
+{
+	//Code added to project 4- START
+	PacketHeader outPktHdr, inPktHdr;
+	MailHeader outMailHdr, inMailHdr;
+	int currentClientID=netname;
+	int currentMailBoxID=ntThreadMailboxID;
+	DEBUG('q',"RespondToClient currentMailBoxID=%d\n", currentMailBoxID);
+	int myUsrPrgMailBoxID=currentMailBoxID-1;
+
+	if(currentClientID==MacID && currentMailBoxID==MailBoxID)
+	{
+		outPktHdr.to=MacID;
+		outMailHdr.to=myUsrPrgMailBoxID; 
+		outMailHdr.from=currentMailBoxID;
+		int PacketLen=strlen(SrvBuffer)+1;
+		outMailHdr.length=PacketLen;
+		DEBUG('q',"Sending \"%s\" to %d\n",SrvBuffer,MacID);
+		if(!postOffice->Send(outPktHdr,outMailHdr,SrvBuffer)){
+			printf("ServerAcquireLock Send failed!\n");
+		}
+		fflush(stdout);
 	}
 	else
 	{
-		//Read from Swap file
-		int readFrom=currentThread->space->myPageTable[vpn].SwapLocation*PageSize;
-		bitMapLock->Acquire();
-		ppn = PhyMemBitMap->Find();	//Find() will find the free bit and also sets the locn it found
-		
-		if(ppn!=-1)
+		//Donothing 
+		//Assume all table data is updated before I'm called.
+	}
+	//Code added to project 4- END
+
+}
+
+int ServerCreateMV(int ClientID, int ThreadID,char *MVName,SvrLockData_t *SvrLocks,\
+ SvrCVData_t *SvrCV,SvrMVData_t  *SvrMV, int *WaitingLockInCV, List **ServerCVWaitQ, 
+ List **SvrLockWaitQ,int *SrvLockCounter, int *SrvCVCounter, int *SrvMVCounter,int ntThreadMailboxID)
+{
+	char *SrvBuffer=new char[100];
+	//printf("%s\n",LockName);
+	// outPktHdr.to = ClientID;
+	// outMailHdr.to = ThreadID;
+	for(int i=0;i<(*SrvMVCounter);i++)
+	{
+		//printf("ForLoop:SvrLocks[%d].LockName=%s\n",i,SvrLocks[i].LockName);
+		//if(SvrLocks[i].LockName)
+		if(strcmp(SvrMV[i].MVName,MVName)==0)
 		{
-			fifoLock->Acquire();                //
-			dummyfifo[dummyfifoCnt++]=ppn;     //useful only for FIFO option
-			
-			 fifoLock->Release();		        //
-			currentThread->space->myPageTable[vpn].physicalPage = ppn; 
-			bitMapLock->Release();
+			DEBUG('q',"%s MV already exists in the server!\n",MVName);
+			//Just return the lock ID to the client- No lock creating stuff
+			//or throwing error
+			sprintf(SrvBuffer,"%d",i);
+			SvrMV[i].UsageCntr++;
+			RespondToClient(SrvBuffer,ClientID,ThreadID,ntThreadMailboxID);
+			delete []SrvBuffer;
+			return (*SrvMVCounter);
 		}
-		else
-		{
-			//physical page not found
-			bitMapLock->Release();
-			ppn=evictApage1(vpn);
-		}
-		//load the swapfile
-		SwapFile->ReadAt(&(machine->mainMemory[ppn*PageSize]),PageSize,readFrom);	
-		ipt[ppn].physicalPage=ppn;
-		ipt[ppn].virtualPage=vpn;
-		
-		ipt[ppn].valid = true;
-		ipt[ppn].use = false;
-		ipt[ppn].dirty = false;
-		
-		ipt[ppn].readOnly = false;
-		ipt[ppn].ProcID=currentThread->currentProcID;
-		iptlock->Release();
-		return ppn;
+	}
+	if((*SrvMVCounter)<MAXMV)
+	{
+		SvrMV[(*SrvMVCounter)].UsageCntr++;
+		//printf(".....Usuage Counter =%d\n",SvrMV[SrvMVCounter].UsageCntr);
+		SvrMV[(*SrvMVCounter)].Status=ACTIVE;
+		strcpy(SvrMV[(*SrvMVCounter)].MVName,MVName);
+		SvrMV[(*SrvMVCounter)].MVValue=0;
+		SvrMV[(*SrvMVCounter)].MVOwner=ClientID;
+		SvrMV[(*SrvMVCounter)].MVThreadID=ThreadID;
+		DEBUG('q',"%s MV successfully created!\n",MVName);
+		sprintf(SrvBuffer,"%d",(*SrvMVCounter));
+		(*SrvMVCounter)++;
+	}
+	else
+	{
+		printf("Error:Reached maximum MV!\n");
+		//sprintf(SrvBuffer,"Error:Reached maximum MV!");
+		sprintf(SrvBuffer,"%d",FAILURE);
+	}
+	RespondToClient(SrvBuffer,ClientID,ThreadID,ntThreadMailboxID);
+	delete []SrvBuffer;
+	return (*SrvMVCounter);
+}
+
+int ServerDestroyMV(int ClientID, int ThreadID,int MVID,SvrLockData_t *SvrLocks,\
+ SvrCVData_t *SvrCV,SvrMVData_t  *SvrMV, int *WaitingLockInCV, List **ServerCVWaitQ,\
+ List **SvrLockWaitQ,int *SrvLockCounter, int *SrvCVCounter, int *SrvMVCounter,int ntThreadMailboxID)
+{
+	int ErrorFlag=0;
+	int iSuccess=0;
+	char *SrvBuffer=new char[100];
+	int MVOwnerID;
+	// outPktHdr.to = ClientID;
+	// outMailHdr.to = ThreadID;
+
+	if( MVID>MAXMV)
+	{
+		ErrorFlag=ErrorFlag-2;//To return -1
+		//sprintf(SrvBuffer,"ERROR!!Invalid Lock ID %d",MVID);
+		sprintf(SrvBuffer,"%d",FAILURE);
+		printf("ERROR!!Invalid MV ID ErrorID:%d\n",ErrorFlag);
+		RespondToClient(SrvBuffer,ClientID,ThreadID,ntThreadMailboxID);
+		delete []SrvBuffer;
+		return ErrorFlag;
+	}
+	if(SvrMV[MVID].Status==VOID)
+	{
+		ErrorFlag=ErrorFlag-2;//To return -1
+		//sprintf(SrvBuffer,"ERROR!!Invalid Lock ID %d",MVID);
+		sprintf(SrvBuffer,"%d",FAILURE);
+		printf("ERROR!!Attempting to delete non-existant MVID:%d\n",MVID);
+		RespondToClient(SrvBuffer,ClientID,ThreadID,ntThreadMailboxID);
+		delete []SrvBuffer;
+		return ErrorFlag;
+	}
+	if(SvrMV[MVID].UsageCntr==1)
+	{
+		SvrMV[MVID].UsageCntr=0;
+		SvrMV[MVID].MVOwner=-1;
+		SvrMV[MVID].MVThreadID=-1;
+		SvrMV[MVID].MVName="";
+		SvrMV[MVID].MVValue=-1;
+		SvrMV[MVID].Status=VOID;
+		//sprintf(SrvBuffer,"MVID %d is successfully destroyed\n",MVID);
+		sprintf(SrvBuffer,"%d",SUCCESS);
+		printf("MVID %d is successfully destroyed\n",MVID);
+		RespondToClient(SrvBuffer,ClientID,ThreadID,ntThreadMailboxID);
+		delete []SrvBuffer;
+		return SUCCESS;
+	}
+	
+	else
+	{
+		ErrorFlag=ErrorFlag-2;//To return -1
+		//sprintf(SrvBuffer,"ERROR!!Attempting to delete BUSY lock:%d",MVID);
+		sprintf(SrvBuffer,"%d",FAILURE);
+		printf("ERROR!!Attempting to delete BUSY MV:%d\n MV UsuageCounter = %d\n",MVID,SvrLocks[MVID].UsageCntr);
+		SvrMV[MVID].UsageCntr--;
+		RespondToClient(SrvBuffer,ClientID,ThreadID,ntThreadMailboxID);
+		delete []SrvBuffer;
+		return ErrorFlag;
 	}	
 }
 
-
-
-int evictApage1(int vpn)
+int ServerSetMV(int ClientID, int ThreadID,int MVID, int MVValue,SvrLockData_t *SvrLocks,\
+ SvrCVData_t *SvrCV,SvrMVData_t  *SvrMV, int *WaitingLockInCV, List **ServerCVWaitQ,\
+ List **SvrLockWaitQ,int *SrvLockCounter, int *SrvCVCounter, int *SrvMVCounter,int ntThreadMailboxID)
 {
-	int evictAPageProcID;
-	AddrSpace* evictAPageSpace=NULL;
-	int SwapFileLoc;
-	int evictAPage;
-	
-	if(rplacementPol==0)
-	{
-		//fifo page replacement policy deployed
-		evictAPage=fifofn();
-	}
-	else if(rplacementPol==1)
-	{
-		//random page replacement policy deployed
-		evictAPage=Random()%NumPhysPages;
-	}
-	
-	evictAPageSpace=currentThread->space; 
-	IntStatus old=interrupt->SetLevel(IntOff);
-	for (int i = 0; i<TLBSize; i++)
-	{
-		if(machine->tlb[i].physicalPage==evictAPage)
-		{
-			
-			machine->tlb[i].valid = false;
-			ipt[evictAPage].dirty=machine->tlb[i].dirty;
-			
-		}       
-	}
-	interrupt->SetLevel(old);
+	int ErrorFlag=0;
+	int iSuccess=0;
+	char *SrvBuffer=new char[100];
+	DEBUG('q',"..........Recieved MV value =%d\n",MVValue);
 
-	if(ipt[evictAPage].dirty)
+	if(MVID<0 || MVID>MAXMV)
 	{
-		//page is dirty Save to swap file
-		int currVPN=ipt[evictAPage].virtualPage;
-		evictAPageSpace->myPageTable[currVPN].SwapLocation=SwapBitMap->Find();
-		
-		int writeTo=evictAPageSpace->myPageTable[currVPN].SwapLocation*PageSize;
-		
-		SwapFile->WriteAt(&(machine->mainMemory[evictAPage*PageSize]), PageSize,writeTo );		
-		evictAPageSpace->myPageTable[currVPN].location=1;
-		evictAPageSpace->myPageTable[currVPN].physicalPage=-1;
-		bzero(&(machine->mainMemory[evictAPage*PageSize]),PageSize);
+		ErrorFlag=ErrorFlag-2;//To return -1
+		//sprintf(SrvBuffer,"ERROR!!Invalid MV ID %d",MVID);
+		sprintf(SrvBuffer,"%d",FAILURE);
+		printf("ERROR!!Invalid MVID ErrorID:%d\n",ErrorFlag);
+		RespondToClient(SrvBuffer,ClientID,ThreadID,ntThreadMailboxID);
+		delete []SrvBuffer;
+		return ErrorFlag;
+	}
+	if(MVValue<0 || MVID>65536)
+	{
+		ErrorFlag=ErrorFlag-2;//To return -1
+		//sprintf(SrvBuffer,"ERROR!!Invalid MV ID %d",MVID);
+		sprintf(SrvBuffer,"%d",FAILURE);
+		printf("ERROR!!Too large or less value for MVID :%d\n",MVID);
+		RespondToClient(SrvBuffer,ClientID,ThreadID,ntThreadMailboxID);
+		delete []SrvBuffer;
+		return ErrorFlag;
+	}
+	if(SvrMV[MVID].Status==VOID)
+	{
+		ErrorFlag=ErrorFlag-2;//To return -1
+		//sprintf(SrvBuffer,"ERROR!!Invalid Lock ID %d",MVID);
+		sprintf(SrvBuffer,"%d",FAILURE);
+		printf("ERROR!!Attempting to Set non-existant MVID:%d\n",MVID);
+		RespondToClient(SrvBuffer,ClientID,ThreadID,ntThreadMailboxID);
+		delete []SrvBuffer;
+		return ErrorFlag;
+	}
+	if((MVID>=0)&&(MVID<MAXMV))
+	{
+		if(SvrMV[MVID].Status!=VOID)
+		{
+			sprintf(SrvBuffer,"%d",MVValue);
+			RespondToClient(SrvBuffer,ClientID,ThreadID,ntThreadMailboxID);
+			SvrMV[MVID].MVValue=MVValue;
+			delete []SrvBuffer;
+			DEBUG('q',"..........Updated MV value =%d\n",SvrMV[MVID].MVValue);
+			return SUCCESS;
+		}
 	}
 	else
 	{
-		evictAPageSpace->myPageTable[vpn].physicalPage=-1;
-		bzero(&(machine->mainMemory[evictAPage*PageSize]),PageSize);
+		ErrorFlag=ErrorFlag-2;//To return -1
+		//sprintf(SrvBuffer,"ERROR!!Invalid MV ID %d",MVID);
+		sprintf(SrvBuffer,"%d",FAILURE);
+		printf("ERROR!!Invalid MVID ErrorID:%d\n",ErrorFlag);
+		RespondToClient(SrvBuffer,ClientID,ThreadID,ntThreadMailboxID);
+		delete []SrvBuffer;
+		return ErrorFlag;
 	}
-	return evictAPage;
+	return ErrorFlag; 
 }
 
-int fifofn()
+int ServerGetMV(int ClientID, int ThreadID,int MVID,SvrLockData_t *SvrLocks,\
+ SvrCVData_t *SvrCV,SvrMVData_t  *SvrMV, int *WaitingLockInCV, List **ServerCVWaitQ,\
+ List **SvrLockWaitQ,int *SrvLockCounter, int *SrvCVCounter, int *SrvMVCounter,int ntThreadMailboxID)
 {
-	fifoLock->Acquire();
-	int pp=dummyfifo[0];
-	for(int i=0;i<dummyfifoCnt;i++)
+	int ErrorFlag=0;
+	int iSuccess=0;
+	char *SrvBuffer=new char[100];
+
+	if(MVID<0 || MVID>MAXMV)
 	{
-		dummyfifo[i]=dummyfifo[i+1];
+		ErrorFlag=ErrorFlag-2;//To return -1
+		//sprintf(SrvBuffer,"ERROR!!Invalid MV ID %d",MVID);
+		sprintf(SrvBuffer,"%d",FAILURE);
+		printf("ERROR!!Invalid MVID ErrorID:%d\n",ErrorFlag);
+		RespondToClient(SrvBuffer,ClientID,ThreadID,ntThreadMailboxID);
+		delete []SrvBuffer;
+		return ErrorFlag;
 	}
-	dummyfifo[dummyfifoCnt]=pp;
-	fifoLock->Release();
-	return pp;
+	if((MVID>=0)&&(MVID<MAXMV))
+	{
+		if(SvrMV[MVID].Status!=VOID)
+		{
+			sprintf(SrvBuffer,"%d",SvrMV[MVID].MVValue);
+			//printf("ERROR!!Invalid MVID ErrorID:%d\n",ErrorFlag);
+			//printf("In get.....Usuage Counter =%d\n",SvrMV[MVID].UsageCntr);
+			RespondToClient(SrvBuffer,ClientID,ThreadID,ntThreadMailboxID);
+			delete []SrvBuffer;
+			return SvrMV[MVID].MVValue;
+		}
+	}
+			if(SvrMV[MVID].Status==VOID)
+	{
+		ErrorFlag=ErrorFlag-2;//To return -1
+		//sprintf(SrvBuffer,"ERROR!!Invalid Lock ID %d",MVID);
+		sprintf(SrvBuffer,"%d",FAILURE);
+		printf("ERROR!!Attempting to get non-existant MVID:%d\n",MVID);
+		RespondToClient(SrvBuffer,ClientID,ThreadID,ntThreadMailboxID);
+		delete []SrvBuffer;
+		return ErrorFlag;
+	}
+	else
+	{
+		ErrorFlag=ErrorFlag-2;//To return -1
+		//sprintf(SrvBuffer,"ERROR!!Invalid MV ID %d",MVID);
+		sprintf(SrvBuffer,"%d",FAILURE);
+		printf("ERROR!!Invalid MVID ErrorID:%d\n",ErrorFlag);
+		RespondToClient(SrvBuffer,ClientID,ThreadID,ntThreadMailboxID);
+		delete []SrvBuffer;
+		return ErrorFlag;
+	}
 }
 
+void initialize(SvrLockData_t *SvrLocks, SvrCVData_t *SvrCV,SvrMVData_t  *SvrMV, int *WaitingLockInCV, List **ServerCVWaitQ, List **SvrLockWaitQ,int *SrvLockCounter, int *SrvCVCounter, int *SrvMVCounter)
+{
+	ntThreadLock=new Lock("ntThreadLock");
+	ntThreadLock->Acquire();
+	HideMessage=false;
+	ReleaseCalledFromWait=-1;
+	for(int i=0;i<MAXLOCKS;i++)
+	{
+		SvrLocks[i].IsOkToDestroy=VOID;
+		SvrLocks[i].UsageCntr=0;
+		SvrLocks[i].LockName=new char[10];
+		SvrLocks[i].LockOwner=-1;
+		SvrLocks[i].LockThreadID=-1;
+		SvrLocks[i].Status=VOID;
+		SvrLockWaitQ[i]=new List;
+	}
+	for(int i=0;i<MAXCV;i++)
+	{
+		SvrCV[i].UsageCntr=0;
+		SvrCV[i].CVName=new char[10];
+		SvrCV[i].CVOwner=-1;
+		SvrCV[i].CVThreadID=-1;
+		SvrCV[i].Status=VOID;
+		ServerCVWaitQ[i]=new List;
+		WaitingLockInCV[i]=-1;
+	}
+	for(int i=0;i<MAXMV;i++)
+	{
+		SvrMV[i].UsageCntr=0;
+		SvrMV[i].IsOkToDestroy=-1;
+		SvrMV[i].MVName=new char[10];
+		SvrMV[i].MVOwner=-1;
+		SvrMV[i].MVThreadID=-1;
+		SvrMV[i].Status=VOID;
+		SvrMV[i].MVValue=-1;
+	}
+	ntThreadLock->Release();
+}

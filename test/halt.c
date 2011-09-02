@@ -1,48 +1,24 @@
-/* matmult.c 
- *    Test program to do matrix multiplication on large arrays.
- *
- *    Intended to stress virtual memory system.
- *
- *    Ideally, we could read the matrices off of the file system,
- *	and store the result back to the file system!
- */
-
 #include "syscall.h"
-
-#define Dim 	20	/* sum total of the arrays doesn't fit in 
-			 * physical memory 
-			 */
-
-int A[Dim][Dim];
-int B[Dim][Dim];
-int C[Dim][Dim];
-int D[Dim][Dim];
-int E[Dim][Dim];
-int F[Dim][Dim];
-
-int
-main()
+int main()
 {
-    int i, j, k;
-
-    for (i = 0; i < Dim; i++)		/* first initialize the matrices */
-	for (j = 0; j < Dim; j++) {
-	     A[i][j] = i;
-	     B[i][j] = j;
-	     C[i][j] = 0;
-	}
-
-    for (i = 0; i < Dim; i++)		/* then multiply them together */
-	for (j = 0; j < Dim; j++)
-            for (k = 0; k < Dim; k++)
-		 C[i][j] += A[i][k] * B[k][j];
-		Print("\n");
-		Print("\n");
-		Print("\n");
+     int otLock[3], j,dummycv;
+		 int mv1,mv2,mv3,m4;
+		 
+		 
+    Print("Waiting for network setup\n");
+    StartSimulation();
+    
+    otLock[0]=CreateLock("otlk",4);
+		otLock[1]=CreateLock("otlk1",5);
+		otLock[2]=CreateLock("otlk2",5);
+		for(j=0;j<3;j++)
+    Print1("the ot lock index is-------- %d\n",otLock[j]);
+		dummycv=CreateCondition("dlcv",4);
 		
-		Print1("THE OUTPUT OF THE MATMULT OPERATION IS %d !!!!!!!!!!!!!!!!!!!! \n",C[Dim-1][Dim-1]);
-		Print("\n");
-		Print("\n");
-   Exit(C[Dim-1][Dim-1]);		/* and then we're done */
 		
+		Acquire(otLock[0]);
+		Wait(dummycv,otLock[0]);
+		Print("I am  out of wait!!!!\n");
+		Release(otLock[0]);
+		Print("released the otlock in halt\n");
 }

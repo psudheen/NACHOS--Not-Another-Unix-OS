@@ -47,7 +47,6 @@ class FileSystem {
 
     bool Create(char *name, int initialSize) { 
 	int fileDescriptor = OpenForWrite(name);
-	
 
 	if (fileDescriptor == -1) return FALSE;
 	Close(fileDescriptor); 
@@ -55,12 +54,10 @@ class FileSystem {
 	}
 
     OpenFile* Open(char *name) {
-		
 	  int fileDescriptor = OpenForReadWrite(name, FALSE);
-	  OpenFile *executable;
+
 	  if (fileDescriptor == -1) return NULL;
-	  executable=new OpenFile(fileDescriptor);
-	  return executable;
+	  return new OpenFile(fileDescriptor);
       }
 
     bool Remove(char *name) { return Unlink(name) == 0; }

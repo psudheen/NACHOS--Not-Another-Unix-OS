@@ -53,7 +53,7 @@
 
 // Size of the thread's private execution stack.
 // WATCH OUT IF THIS ISN'T BIG ENOUGH!!!!!
-#define StackSize	(4 * 1024)	// in words
+#define StackSize	(1536 * 1024)	// in words
 
 
 // Thread state
@@ -100,7 +100,9 @@ class Thread {
 						// overflowed its stack
     void setStatus(ThreadStatus st) { status = st; }
     char* getName() { return (name); }
-    void Print() { printf("%s, ", name); }
+    void Print() { printf("%s, ", name); }		
+    void setMailboxNo(int MailboxNum) { mailboxNo = MailboxNum; } 
+    int getMailboxNO() { return mailboxNo; }
 
   private:
     // some of the private data for this class is listed above
@@ -114,6 +116,7 @@ class Thread {
     void StackAllocate(VoidFunctionPtr func, int arg);
     					// Allocate a stack for thread.
 					// Used internally by Fork()
+		int mailboxNo;
 
 #ifdef USER_PROGRAM
 // A thread running a user program actually has *two* sets of CPU registers -- 

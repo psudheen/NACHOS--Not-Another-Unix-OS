@@ -17,7 +17,8 @@
 
 #include "copyright.h"
 #include "list.h"
-
+#include "machine.h"
+#include "system.h"
 //----------------------------------------------------------------------
 // ListElement::ListElement
 // 	Initialize a list element, so it can be added somewhere on a list.
@@ -236,3 +237,34 @@ List::SortedRemove(int64_t *keyPtr)
     return thing;
 }
 
+void
+List::SortedInsert1(void *item, unsigned long int sortKey)
+{
+    ListElement *element = new ListElement(item, sortKey);
+    ListElement *ptr;		// keep track
+
+    if (IsEmpty()) {	// if list is empty, put
+        first = element;
+        last = element;
+    } else if (sortKey < first->key) {	
+		// item goes on front of list
+	element->next = first;
+	first = element;
+    } else {		// look for first elt in list bigger than item
+        for (ptr = first; ptr->next != NULL; ptr = ptr->next) {
+            if (sortKey < ptr->next->key) {
+		element->next = ptr->next;
+	        ptr->next = element;
+		return;
+	    }
+			if(sortKey ==ptr->next->key)
+			{
+				printf("==================================================================Equal time stamp %d\n",sortKey);
+				interrupt->Halt();
+				
+			}
+	}
+	last->next = element;		// item goes at end of list
+	last = element;
+    }
+}

@@ -1,1063 +1,804 @@
+                                                                    
+			******************************************************************************                                             
+			Title: Writeup for Project 4- Distributed Carls Jr Simulation, fall 2010
+			******************************************************************************
+Date:12/31/2010	  		
 
-
-
-
-Title:  Writeup for Project 2, Fall 2010
-
- Date:  10/10/2010
-
- Group Num 35 :     Name                                                                           Email            Student ID
-                    Pramod K Sudheendra,                                                           psudheen           6592406458
-                    Madhumitha Rajathi Rajakumar Nallathamby                                       rajakuma           2485511454
-
-
-
+Group Number :44 	Name			Email ID	        Student ID
+			Pramod K Sudheendra, 	psudheen@usc.edu	6592406458
+			Venkat Paritala		paritala@usc.edu	2891653047					
+			Abhindandan prativadi	prativad@usc.edu	3512718295				 	
+...............................................................................................................................................................................................................................................................................
 
 I. Requirements:
+----------------
+In project 4 the main goal is to create a distributed system for allowing user programs which are spread across multiple nachos insatnces to participate in a single Carls Jr Simulation. In this scenario, a user program does not know where any other user program is executing.
 
- 	This project requires modifying Nachos to support Multiprogramming. The first step is to implement the Exit, Halt and Yield functions as System calls.
-For multiple programs to run smoothly, we need to have locks and condition variables to ensure mutual exclusion and avoid race conditions. So we have to 
-implement functions to create, destroy and manipulate locks and condition variables also as system calls.The next step in implementing multiprogramming is
-to come up with a way of allocating physical memory frames so that multiple programs can be loaded into memory at once. Then, the Execute and Fork system 
-calls can be implemented. Once the required implementations are done, and Nachos converted to accommodate multiprogramming, multiple instances of  
-'Carl's Jr restaurant simulation', which was implemented in Project 1,  are to be run and tested. If multiple instances of this multi-threaded program 
-runs with synchronization, it means that Nachos has been converted to support Multiprogramming.
+For acheieving this, we create a networking thread that will handle the networking tasks of each userprogram separately. So essentially for each userprogram we need two threads, One thread will be the Carls Jr simulation entity (a Nachos user program) and the 
+other thread will be listening for messages from other group members (a Nachos kernel thread). 
+
+So every time a userprogram thread wants to make a system call it will send a message to its corresponding networking thread(which acts as a server to that userprogram thread). This is transparent to user program.
+Each request from the user program is sent to all other network threads.
+
+For this to be possible the network threads should be knowing the presence(ie client id and mailbox number) of other networking threads, so
+initially we make all the networking threads register with a server, we call this a "group server". 
+
+The user programs are made to wait on network threads at the beginning of the simulation for group registration to complete, for this we create a new system call called the startsimulation. The network threads send there details to the group server and once group sever receives the expected number 
+of registrations, it sents out information about client id and mailbox number of all networking threads to all the networking threads.
+Then group server shuts down.
+
+We have to ensure that the total ordering occurs for messsages exchanged between the threads so we assign timestamp with each message and all networking 
+threads execute in the same manner(ie lowest timestamp message is executed first).
+
+EXTRA CREDIT:  The main goal is to test the ability of the kernel to handle the loss of packets
+                We have to make sure that
+								->Any message received in order is to be printed-out for a particular machine-ID/mailbox-number combination. 
+								->Each kernel function should  print out messages in increasing sequence number order for each other kernel function.
+								
+                To test this, we have to run kernel functions, and use -l command, and see whether we get all the packets we expected.
+								We create kernel functions, we make them send packets to all the known kernelfunctions ruuning on the other instances of nachos, then the kernel functions
+								go on recieve.
+						    They print only in order messages and send an ack to the corresponding machine id. (We ignore out of order message).If an ack was previously sent for an out of order message it just recieved, it will resend the ack, else it simply ignores the message.
+						    To handle the loss packets, we add all the sent messages into a queue, the messages in the queue are resend once the timer expires, so for this we need a timer function.
+               								
 
 
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 II. Assumptions:
-	
-	- Maximum number of Open Files possible is 256
-	- Maximum number of Child Spaces is 256
-	- NumPhysPages in 'machine.h' is set to 5120 as each intance of Carl Jr simulation is likely is exceed 2100 pages and there will 2 Carl Jr programs running.
-	- Maximum number of Locks possible is 1000
-	- Maximum number of Condition variables is also set tp 1000
-	- UserStackSize is set to 1024
+------------------
 
+1)Memory model is assumed to be that of project 2 ie multiprogramming with large physical memory
+2)The machine id is always a single digit, this is done to accomaodate message limit of 40 bytes
+3) The maximum number of locks, condition variables is assumed to be 500
+4) The maximum number of monitor variables that can be created are 1000
+5) UserStack space is assumed to be large to accomdate huge data exchange over network
+6) Network relability is assummed to be 100% for Carl Jr simulation.
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 
 III. Design:
+------------
+Project 4:
 
-	PartI: SYSTEM CALLS AND EXCEPTION HANDLING
 
-	The System calls required are included in exception.cc and linked to the Exception Handler function in it. 
+Group Server Registration:
+---------------------------
 
-	*LOCKS:
+In main.cc a function called GroupServer is included, which performs the following tasks:
 
-		int CreateLock_Syscall(unsigned int vaddr, int len)
-	
-    		 Create a lock  with the name in the user buffer pointed to by vaddr.  The lock name is at most MAXFILENAME chars long.  If the lock is created
-     successfully, it is put in the address space's lock table and an id (lock id) returned that can find the lock later.  If there are any errors, -1 is 
-     returned.
-			{
-				if(length is <0 or <MAXFILENAME)
-				{
-					Error
-					Print-invalid size
-					exit
-				}
+We run a group server in a seperate instance of nachos, the total number of networking threads are inputed by the user, each networking thread goes on recieve mode on the group server
+once the number of expected networking threads are registered with the group server, it sends out the number of threads(so that the networking threads receive the messages in a loop for that many times) and details(client id and mailboxnumber) of each networking thread to all the networking threads.
+After sending all the details the Group server shuts down.
 
-				if(virtual address<0 or >address space size)
-				{
-					Error
-	 				print-Invalid address
-					exit
-				 }
+All networking threads store these details, which will be used later to send messages.
+Once the networking thread receives all the messages, it sends a message to its userprogram indicating that it can start its execution.
+This completes the group registration process.
 
-				if(check for space)
-    			{		
-					Error
-       				Print-Address length exceeded the total size
-       				exit
-       		    }
+NetworkingThread Details
+-------------------------
+In thread.h
+The thread class is modified, we associate a unique number with every thread, this is the mailbox number of that thread.
+To access this value we have included two functions in the thread class getMailboxNo(),setMailboxNo() which return or set a given value respectively.
 
-				char *buf = new char[len+1];	// Kernel buffer to put the name in
-   				Lock *l;			// The new lock object
-    			int id;				// The lockid
+In Exception.cc 
+The exec system call is modified, when ever a user program thread is created by calling Exec, we create its corresponding networking thread.
+We maintain a global counter called nextmailboxno which is incremented upon creation of new thread,since the user program thread and its corresponding network thread are forked together, they have consecutive mailbox numbers.
+So a networking thread decides whether the message is from userprogram just by subtracting 1 from its mailbox number.
 
-   
-    			if (buf is NULL) 
-    			{
-					Error
-					print-Can't allocate kernel buffer in CreateLock
-					exit
-   				 }
 
-    			if(copying content of virtual address into buf failed)
-    			 {
-					Error
-					print-Bad pointer passed to CreateLock
-					delete buf
-					exit
-			     }
+
+*************************************TOTAL ORDER MESSAGE PASSING ALGORITHM********************************************************
+The following are the steps performed by each networking thread to achieve total ordering of events
+
+1.Recieve a message
+2.Extract timestamp and mebers ID
+3.Update last timestamp in my table for that member
+4. Insert the message into the my message queue in the time stamp order
+5. Extract the earliest time satmp value from my table
+6.Process any message in timestamp order, with a timestamp less than or equal to value from step 4
+
+The networking thread is always in the receive mode, it can either get messages from its own userprogram thread or from other networking thread including itself.
+There are two types of messages possible, one being the update message and the other is action message.
+If it gets a message from its userprogram thread( this is called action message) it appends its time stamp to that message and forwards it to every networking thread including itself.
+If it gets a message from networking threads it will check whether it is a action message or an update message, if it is an update message it simply updates its time,
+if its a action message, it first it sends out its time update message to all netwoking threads including itself and then processes the action message according to the total ordering policy.
+If this action message is from its own userprogram thread then it will return a value depending on the request inside the message,otherwise if this message is from other networking thread it just
+updates its tables(ie Lock,Cv,Mv etc) depending on the type of action specified in the message.
+
+
+
+
+When a user program request a system call, the exception handler will call aprropriate system call, here the validations such as
+
+// Is the size of the name passed is valid
+//Is the virtual address valid
+// Is the lock, cv or mv in the range of possible values
+If any of these validations fail, print approriate error message and return
+Else it will pack the request type and the received name of lock, cv or mv in a buffer and sends it to its networking thread
+Now it enters the receive mode, so here every networking thread acts as a server for its userprogram thread
+
+Each networking thread has its own tables(ie data structures for Locks,Cv's and MV's) which are local to that netwoking thread,which are updated in the same manner by all the networking threads
+
+So after extracting the earliest time satmp message we call a function called Decode message, this fuction extracts the clientid,machineID and the type of request, the following are the type of requests which a userprogram may request:
+
+1. SC_CreateLock: In this case we call serverCreatelock function:
  
-				Acquire Table update lock
-				l=new lock
-
-				if ( l )
-    			{	  
-	    			if (Putting l in the lockTable failed)
-					{
-						delete l;
-					print-no slots in the lock table
-				}
-				else
-				{
-		   			 Make LockUsage counter[id]=0
-					 release table update lock
-		   			 exit	
-		   		}
-    		}
-    		Release table update lock
-			exit
-		}
-
-	************************************************************************
-		void DestroyLock_Syscall(int LockPos)
-		{
-			if(Lockposition<0 or >Max no of locks)
-			{
-				printf("ERROR: Invalid Lock Index\n")
-				return
-			}
-
-			Acquire TableUpdateLock
-			l= new lock
-			i= get lock value corresponding to LockPos from the lock table
-			if(LockUsuageCntr[LockPos]is 0)
-			{
-				if(l)
-				{
-		  			delete l
-		  			Remove lock from table
-				}
-		 		else
-				printf-ERROR:Lock pointer is NULL. Destroy lock failed!
-			}
-    		else
-      			printf-ERROR:Lock does not exist. Destroy lock failed!    
+   // It checks whether the lock alredy exists  
+   // If it does then it will return the index of the lock
+   // If it doesnt then, it will check if the maximum possible number of locks has alredy been reached
+   // If yes then it prints an error message
+   // Else it will create a new lock(ie increment the lock counter value) and return that value
+      
+2. SC_Acquire: In this case we call ServerAcquireLock function: 
     
-    		release Table update lock
-		}
+    // Check whether the lock id being requested is within the possible range of locks
+    // If no return by printing an approriate error message
+    // It checks whether the requesting thread is already the lock owner
+    // If yes then it packs a message called failure and sends it to userprogam  thread
+    // Next it checks the status of the requested lock,if it is free it sends a success message to its userprogram thread
+    // If it is busy then it appends this thread into the waiting queue of the lock
 
-    ***********************************************************************************
-		void AcquireLock_Syscall(int LockPos)
-		{
-				if(Lockposition<0 or >Max no of locks)
-				{
-					printf("ERROR: Invalid Lock Index\n")
-					return
-				}
+3. SC_Release: In this case we call ServerReleaseLock function:
+   
+    //Check whether the lock id is within the possible range of locks
+    //If no return by printing an approriate error message
+    // Check whether the current thread is the owner if no then print an error message and send it to userprogram.
+    // If yes, then send a success message, if the waiting q for that lock is not empty remove one thread from the list and make it the owner of the lock, set its status as busy and return
+    // If the waiting q list is empty then simply set the satus of the lock as free and its owner as -1 and reuturn 
 
-			Acquire TableUpdateLock
-			l= new lock
-			i= get lock value corresponding to LockPos from the lock table
-			if(l)
-			{
-				Acquire the lock 'l'
-				increment the lock usage counter[LockPos]
-			}
-			 else
-			 	printf-ERROR:Lock pointer is NULL. Acquire lock failed!
-	           if(l!=NULL)
-			release Table update lock
-		}
 
-	*****************************************************************************************  
-		void ReleaseLock_Syscall(int LockPos)
-		{
-			if(Lockposition<0 or >Max no of locks
-			{
-				printf("ERROR: Invalid Lock Index\n")
-				return
-			}
+4. SC_DestroyLock: In this case we call ServerDestroyLock function:
+  
+    //Check whether the lock id is within the possible range of locks
+    //If no return by printing an approriate error message
+    // If the usage counter is 1 and the satus is free, set usage counter to zero and satus =-1 and make ownner as null, this implies the lock is succesfully destroyed, send a Success message to userprogram thread
+    // Else print an error message saying its a busy lock and send a failure message to userprogram thread
 
-		    Acquire TableUpdateLock
-			l= new lock
-			l= get lock value corresponding to LockPos from the lock table
-			if(l)
-			{
-				if(lock usage counter[LockPos]>0)
-				{
-					Acquire the lock 'l'
-					increment the lock usage counter[LockPos]
-				}
-			 	else
-				 	printf-ERROR:Release lock failed!
-			}
-			else
-			{	
-				printf-ERROR:Lock does not exist. Release lock failed!
-			}
-			release Table update lock 
-		}
+5. SC_CreateCondition: In this case we call ServerCreateConditionfunction:
+   
+   // It checks whether the cv name  alredy exists  
+   // If it does then it will return the index of the cv
+   // If it doesnt then, it will check if the maximum possible number of cvs has alredy been reached
+   // If yes then it prints an error message
+   // Else it will create a new cv(ie increment the cv counter value) and return that integer value
 
-	 ********************************************************************************************
+6.   SC_DestroyCondition :In this case we call ServerDestroyCondition function:
+   
+    
+    //Check whether the cv id is within the possible range of cv's
+    //If no return by printing an approriate error message
+    // If the usage counter is 1 and the satus is free, set usage counter to zero, status as void, owner as -1 ans name of cv as "", this implies successfull deletion of Cv, print approriates ucces message and retun the same
+    // Else print an error message indiacting the cv is busy and return the same.
 
-	*CONDITION VARIABLES:
+7.   SC_Wait: In this case we call ServerWait function:
+     
+      //Check whether the lock id is within the possible range of locks
+      //If no return by printing an approriate error message
+      //Check whether the cv id is within the possible range of cv's
+      //If no return by printing an approriate error message
+      // Check if the requesting thread is the owner of the lock, if no print error message and return the same.
+      //Check whether the waiting lock matches the save lock, if no print error message and return the same
+      //If all checks are passed, append the servercvwaitq with the clientid,threadid and lock id.
+      // Check if the queue for that lockid is empty, if yes then make the locksatus free, else remove a thread from the queue and make that thread as the lock owner and return
 
-		int CreateCondition_Syscall(unsigned int vaddr, int len)
-		{
-		     if(length is <0 or <MAXFILENAME)
-			 {
-			 	Error
-			 	Print-invalid size
-			 	exit
-			 }
+8.    SC_Signal: In this case we call ServerSignal function:
 
-			 if(virtual address<0 or >address space size)
-			 {
-			 	Error
-			 	print-Invalid address
-			 	exit
-			 }
+      //Check whether the lock id is within the possible range of locks
+      //If no return by printing an approriate error message
+      //Check whether the cv id is within the possible range of cv's
+      //If no return by printing an approriate error message
+      // Check if input condition lock matches the saved lock, if no print error and return the same
+      // If it matches, check if ServerCVWaitQ is empty, if yes send a failure message, if no then remove one thread from condition wait queue
+      // Check if the lock status is free if yes then make this woken up thread as its owner, else append it ti the lock wait queue
 
-			 if(check for space)
-		     {		
-			 	Error
-		     	Print-Address length exceeded the total size
-		     	exit
-		     }
+9.    SC_Broadcast:In this case we call ServerBroadcast function:
 
-			 char *buf = new char[len+1];	// Kernel buffer to put the name in
-		   
-		     if (buf is NULL) 
-		     {
-			 	Error
-			 	print-Can't allocate kernel buffer in CreateCV
-			 	exit
-		   	 }
+      //The validations are same as that as signal
+      // Instead of removing a single thread form the queue, broadcast signals untill the queue is empty
 
-		     if(copying content of virtual address into buf failed)
-		     {
-			 	Error
-			 	print-Bad pointer passed to CreateCV
-			 	delete buf
-			 	exit
-			 }
-		 
-			Acquire table update lock
-		    c = new Condition 
-		    if ( c )
-		    {	  
-		        if (put c in condition table fails )
-				{
-		    		delete c;
-					print- unable to create CV
-				}
-		    	else
-		    	{
-				   make	CVUsuageCntr[id] 0
-		    	    release table update lock
-					exit
-		    	}
-		    }
+10.   SC_CreateMV: In this case we call ServerCreateMV function:
+      
+    // It checks whether the MV alredy exists  
+   // If it does then it will return the index of the lock
+   // If it doesnt then, it will check if the maximum possible number of MV's has alredy been reached
+   // If yes then it prints an error message
+   // Else it will create a new MV(ie increment the lock counter value) and return that value
 
-		    table update lock release
-		    exit  
-		}
+11.   SC_DestroyMV:In this case we call ServerDestroyMV function:
+          
+     //Check whether the MV id is within the possible range of MV's
+    //If no return by printing an approriate error message
+    // Check if the status of the MV is void, if yes print an approriate error message and return the same
+    // If the usage counter is 1, then set it to zero,owner,mvthreadid,satus to -1, and name as"", this inidactes the MV is succefully deleted, send a success message
 
-	***************************************************************************
-		void DestroyCondition_Syscall(int ConditionPos)
-		{
-		    // Destroy the ConditionVariable associated with id ConditionPos.  WITH error reporting
-			if(Conditionposition<0 or >Max no of CV)
-			{
-				printf("ERROR: Invalid CV Index\n")
-				return
-			}
-			Acquire TableUpdateLock
-			c= new condition
-			if(LockUsuageCntr[LockPos]is 0)
-			{
-				if(c)
-				{
-		  			delete c
-		  			Remove CV from table
-				}
-		 		else
-					printf-ERROR:Condition pointer is NULL. Destroy Condition failed!
-			}
-	   		else
-	   			printf-ERROR:CV does not exist. Destroy CV failed!    
+12.  SC_SetMV: In this case we call ServerSetMV function:
+
+
+    //Check whether the MVid or the mv value has exceeded the maximum possible mvid's or value, if either of this is true print a error message and return the same
+    //If the Mv status is not void then set the mvvalue to the required value and send a success message
+
+13    SC_GetMV: In this case we call ServerGetMVfunction: 
+     
+    //Check whether the MVid or the mv value has exceeded the maximum possible mvid's or value, if either of this is true print a error message and return the same
+    // If the mvstatus is not void then return the value of the mv.
+      
+
+
+      In all the above cases, before calling the return the respond to client fucntion is called- This function checks, if the action message was originally sent by its own userprogram thread, just by checking current networking thread's mailbox number minus 1
+      if yes, then it will send the return integer value/SUCCESS/FAILURE message  to its user program, else it does nothing assuming that all the tables were updated in decode message, then the contorl is returned to the decode message which in turns returns the control to 
+      networking thread, which enters recieving mode again.
+
+
+Extra Credit:
+
+In post.cc 
+There are two types of messages involed, one is acknowledgement amd the other is the actual message.
+Before the actual send occurs, we unpack every message and check whether its an acknowledgement or a data message, if it is data message we add it into a global queue of sent messages, else we dont add it.
+This queue is created in system.cc 
+
+In nettest.cc
+The kernel function is written here, each instance of nachos runs the same code, and is differentiated from other by its machine id.
+At the begining of the execution we create certain delay, so as to ensure the other instances are running as well.
+The first task of kernelfunc is it sends out 5 messages to each of the other kernel funcs, since we know before hand which all instances are running, we hard code the outpkthdr filed in a loop.
+The format of the message is <tmsg;(number)>, here tmsg inidicates its a true message, so that we can differentiate it with the ack message, number is ranging from 0-4,
+this is the actual message that we are sending and is printed out on the each terminal. It servers both as the data as well as sequence number.
+After sending out the messages the kernel func enters an while(1) looop and continuosly goes on receive.
+
+Receive logic of kernelfunc
+
+It can either receive a ack message for a message which it sent out initilally or it can receive data message from other kernelfn's 
+
+-> unpack the message and check whether it is an ack message, if yes remove it from the global resend queue, this is done by comparing the msgnumnber and the clientid from which it recieved, with msgnum of messages in the queue and client number, to which it initially had sent to
+-> If it is not an acknowledgement, I got a message from other kernel fn, if it is in order i need to print it out, if it is out of order, but i have akcked it alreday, resend ack.   
+   since we know the messages to be from 0-4, we initally set a flag to zero and when we get a message from that client which macthes my current flag value, then we print it out
+    Also i will send an acknowledgement to the corresponding client, indicating that i have received the message, i keep a note of acknowledgemets i sent.
+-> If it is out of order message, i check whether it was acknowledged already, if yes then it implies the ack was lost so i resned the ack, and ignore the message.
+   If it was not acknowledged earlier i simply ignore the message. The above steps are doen for each cleint id i am expecting messages from
+
 	 
-	   		release Table update lock
-		}
-
-	**********************************************************************************
-		void Wait_Syscall(int ConditionPos,int LockPos)
-		{
-			if(Conditionposition<0 or >Max no of CV)
-			{
-				printf("ERROR: Invalid CV Index\n")
-				return
-			}
-
-			if(Lockposition<0 or >Max no of locks
-			{
-				printf("ERROR: Invalid Lock Index\n")
-				return
-			}
-			l= new lock
-			c= new condition
-
-			 Table update lock acquire
-			 l= get value corresponding to LockPos from lock table
-			 c= get value coresponding to ConditionPos from ConditionTable
-			 release table update lock
-		    
-		    if (c)
-			{
-	      		if (l)
-	      		{
-				    increment usage counter[Conditionpos]
-					c->Wait(l)
-				}
-				else
-				{
-					Error-Bad lock passed  
-				}
-			}
-		    else
-			{
-		    	error-bad CV passed  
-			}
-		}
-
-	***********************************************************************************
-		void Signal_Syscall(int ConditionPos,int LockPos)
-		{
-	   		if(Conditionposition<0 or >Max no of CV)
-			{
-				printf("ERROR: Invalid CV Index\n")
-				return
-			}
-
-			if(Lockposition<0 or >Max no of locks
-			{
-				printf("ERROR: Invalid Lock Index\n")
-				return
-			}
-			l= new lock
-			c= new condition
-
-			 Table update lock acquire
-			 l= get value corresponding to LockPos from lock table
-			 c= get value coresponding to ConditionPos from ConditionTable
-			 release table update lock
-		    
-		    if (c)
-			{
-	      		if (l)
-	      		{
-				    increment usage counter[Conditionpos]
-					c->Signal(l)
-				}
-				else
-				{
-					Error-Bad lock passed  
-				}
-			}
-		    else
-			{
-		    	error-bad CV passed  
-			}
-		}
-
-	******************************************************************************
-		void Broadcast_Syscall(int ConditionPos,int LockPos)
-		{
-   			if(Conditionposition<0 or >Max no of CV)
-			{
-				printf("ERROR: Invalid CV Index\n")
-				return
-			}
-
-			if(Lockposition<0 or >Max no of locks
-			{
-				printf("ERROR: Invalid Lock Index\n")
-				return
-			}
-			l= new lock
-			c= new condition
-
-			 Table update lock acquire
-			 l= get value corresponding to LockPos from lock table
-			 c= get value coresponding to ConditionPos from ConditionTable
-			 release table update lock
-		    
-		    if (c)
-			{
-	      		if (l)
-	      		{
-				    increment usage counter[Conditionpos]
-					c->Broadcast(l)
-				}
-				else
-				{
-					Error-Bad lock passed  
-				}
-			}
-		    else
-			{
-		    	error-bad CV passed  
-			}
-		}
-
-	******************************************************************************************
-
-	*YIELD:
-
-		void Yield_Syscall()
-		{
-			call currentThread->Yield
-		}
-
-	*******************************************************************************************
-
-	*EXIT:
-
-		void Exit_Syscall(int exitCode)
-		{
-			if(valid currentThreadID and currentProcessID)
-			{
-				processTableLock->Acquire
-				if(no threads are alive in the current process)
-				{
-					if(currentProcess is the last process)
-					{
-						processTableLock->Release()
-						//Shutdown OS
-						interrupt->Halt()
-					}
-					else	   //last thread in current process, but not last process
-					{
-						Destroy the bitmap
-						Destroy page table
-						delete currentThread->space
-						TotalProcessCount--
-						processTableLock->Release
-						currentThread->Finish()
-					}
-				}
-				else	//not the last thread
-				{
-					Get the stack top address to destroy this thread stack
-					destroy the bitmap
-					default the stack loc on Proc table	to NULL
-					Decrement the Active Thread count
-					if(aliveThreadcount>0)
-						 AliveThreadCount--
-						 
-					processTableLock->Release()
-					currentThread->Finish()			
-				}
-			}
-			else
-			{
-				currentThread->Finish()
-			}
-		}
-			
-	******************************************************************************************************************
-	PartII:   MULTIPROGRAMMING
-
-		void KernelFunc(int vaddr)
-		{
-			setup all registers and then switch to user mode to run the user program
-			write to the register PCReg the virtual address.
-			call Restorestate function inorder to prevent information loss while context switching.
-			get value from process table write to the stack register , the starting postion of the stack for this thread.
-			Acquire process table lock	
-			for (j=0; j<TotalProcessCount; j++)
-			{
-			  find the process Id
-				{
-				  break;
-				}
-			}
-			get stack address from the process table for current thread
-		   write the current thread's stack address to stackReg
-		   Release Process table lock
-			machine->Run();
-		}
-
-	****************************************************************************************
-
-	*FORK
-
-		void Fork_Syscall( unsigned int vaddr)
-		{
-			if(virtual address<0 or >address space size)
-					 {
-					 	Error
-					 	print-Invalid address
-					 	exit
-					 }
-
-		   t= new thread
-			if(currentThread->space==NULL)
-			{
-				Print-Thread has illegal address space
-			}
-			make a page table
-			acquire proces table lock			
-			get Process ID
-			release process table lock
-			currentPID=0;
-			processTable[currentPID].myProcAddrSpace=currentThread->space; 
-			if(pageTableLock[currentPID]==NULL)
-			{
-				print-pageTableLock is a NULL pointer
-				exit
-			}
-			pageTableLock[currentPID]->Acquire
-			get the number of pages
-			get page table
-			create new translation entry
-		    copy old to new pagetable
-			allocate new stack
-			initialize the new created pagetable entry
-			delete old page table
-			t= new thread
-			numpages=numpages+p
-			save the stack start location for the new thread in its process table
-		   	Release process table lock
-			t->Fork(kernelFunction,vaddr)
-
-		}
+In system.cc
+->I create a new timer object called timersend which is created only if the command is -l, this timer object calls a function called resendTimerfn periodically
+-> The resendTimerfn forks a new thread called resendMsgfn, every time the difference in current time and the last forked time exceeds the threshold value(time)
+    This function removes all the messages from the global resend queue one by one, unpack the data and get the destination clinet id and resends it, these messages are copied into a temp list and are
+		back into the global resned queue. Since these are messages, to avoid them being added to the global queue when resndtimerfn sends them, we make the outpkthdrfrom as 51, in post.cc
+		we check for 51 if yes we make outpkthdr as currentkernelfn clientid and send without adding it to the queue.
+		
  
-	*****************************************************************************************
 
-	*EXECUTE:
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-		void ExecFunc(int addr)
-		{
-			initialise all registers and then switch to user mode to run the user program
-			write to the register PCReg the virtual address.
-			call Restorestate function inorder to prevent information loss while context switching.
-	    	Run the new executable as a thread!
-	    	machine->Run()
-	   	}
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-		SpaceId Exec_Syscall(unsigned int fileName,int len)
-		{
-			if(len<=0)
-			{
-				Print-Invalid filename length for EXEC system call!
-				exit
-			}
-		    OpenFile *executable;
-		    char *buf= new char(len+1);
-			if(copyin(fileName,len,buf)==-1 ) 
-			{
-			    Print-Bad pointer passed
-				delete buf
-				return
-			}
-				
-			buf[ len]='\0';
-			Open(buf)
-			delete buf;
-			if(executable==0)
-			{
-				print-file not found
-		        return -1;
-		    }
-		    
-			AddrSpace *myProcAddrSpace=new AddrSpace(executable);
-			delete executable;
-				
-			Update proc table
+
+IV. Implementation
+-------------------
+
+
+
+
+	------------------------------------------------------------------------------------------------------------------------------------------------------------
+	+ Files Modified
+	/userprog/exception.cc
+	/machine/machine.h
+	/threads/system.cc
+	/threads/system.h
+	/userprog/addrspace.h
+	/userprog/addrspace.cc
+	/network/nettest.cc
+	/threads/main.cc
+     /threads/thread.h
+	/threads/syscall.h
+     /test/start.s
+     /network/post.cc
+	 /test/sort.c
+	 /test/testfiles.c
+	 
+        
+
+
+	------------------------------------------------------------------------------------------------------------------------------------------------------------	
+
+	+ Files added
+	
+All below files in ../test directory
+  OrdT1.c
+	cok.c
+	cok1.c
+	cust2 
+	mg2.c 
+	n0.c
+	n2.c
+	n4.c 
+	waitr1.c
+  cust.c  
+	cust2.c                         
+OrdT.c 
+         OrdT2.c 
+				 cok01.c  
+				 cok2.c    
+				 mg1.c     
+				 mgwt.c
+				 n1.c  
+				 n3.c
+				 waiter.c
+				 waitr2.c
+       cust1.c 
+			 halt.c                   
+
+	
+
+	
+
+	------------------------------------------------------------------------------------------------------------------------------------------------------------
+	
+	
+	
 			
-			Get the Stack Address
-			t=new thread
-			t->space=myProcAddrSpace
-			t->currentThreadID=0
-			AliveProcCount++
-			TotalProcessCount++
-			processTableLock->Release()
-				
-			Start new process created as a thread
-			t->Fork((VoidFunctionPtr)ExecFunc,0);
-			return the address space identifier
-		}
+	+ Data Structures modified, and the file they were added to.
+	------------------------------------------------------------------------ In Addrspace.h
+	ALL the entities are restored to project 2 entities
+
+	------------------------------------------------------------------------------------------------------------------------------------------------------------ In Exception.cc
+
+        typedef struct mailBox_t
+{
+int MailBoxNo;
+	unsigned long int TimeStamp;
+};
+         
+        
+typedef struct LastTimeStampTable_t
+{
+	unsigned long int TimeStamp;
+};
+
+        typedef struct SvrLockData_t
+{
+int IsOkToDestroy;
+	int UsageCntr;
+	char* LockName;
+	int LockOwner;
+	int LockThreadID;
+int Status;
+};
+
+        typedef struct SvrCVData_t
+{
+int IsOkToDestroy;
+int UsageCntr;
+char* CVName;
+int CVOwner;
+int CVThreadID;
+int Status;
+};
+
+        typedef struct SvrMVData_t
+{
+int IsOkToDestroy;
+int UsageCntr;
+char* MVName;
+int MVValue;
+int MVOwner;
+int MVThreadID;
+int Status;
+};
 
 
+        ------------------------------------------------------------------------------------------------------------------------------------------------------------- In thread.h
 
-	*****************************************************************************************
+	class Thread {
+  private:
+    // NOTE: DO NOT CHANGE the order of these first two members.
+    // THEY MUST be in this position for SWITCH to work.
+    int* stackTop;			 // the current stack pointer
+    int machineState[MachineStateSize];  // all registers except for stackTop
 
-	*For PRINTing the output and SCANing the input:
-			
-		We used the Print(print a string of characters), Print1 (prints a single variable), Print2 (prints 2 variables) and Scan(gets an integer input 
-	from the user and stores it) functions provided by the grader. 
+  public:
+    Thread(char* debugName);		// initialize a Thread 
+    ~Thread(); 				// deallocate a Thread
+					// NOTE -- thread being deleted
+					// must not be running when delete 
+					// is called
 
+    // basic thread operations
 
-IV. Implementation:
+    void Fork(VoidFunctionPtr func, int arg); 	// Make thread run (*func)(arg)
+    void Yield();  				// Relinquish the CPU if any 
+						// other thread is runnable
+    void Sleep();  				// Put the thread to sleep and 
+						// relinquish the processor
+    void Finish();  				// The thread is done executing
+    
+    void CheckOverflow();   			// Check if thread has 
+						// overflowed its stack
+    void setStatus(ThreadStatus st) { status = st; }
+    char* getName() { return (name); }
+    void Print() { printf("%s, ", name); }		
+    void setMailboxNo(int MailboxNum) { mailboxNo = MailboxNum; } 
+    int getMailboxNO() { return mailboxNo; }
 
-	Files Modified:
-		In the 'test' directory,
-		"	start.s
-		"	testfiles.c
-		In the 'userprog' directory,
-		"	addrspace.h
-		"	addrspace.cc
-		"	exception.cc
-		"	syscall.h
+  private:
+    // some of the private data for this class is listed above
+    
+    int* stack; 	 		// Bottom of the stack 
+					// NULL if this is the main thread
+					// (If NULL, don't deallocate stack)
+    ThreadStatus status;		// ready, running or blocked
+    char* name;
 
-		In the 'machine' directory,
-		"	machine.h
+    void StackAllocate(VoidFunctionPtr func, int arg);
+    					// Allocate a stack for thread.
+					// Used internally by Fork()
+		int mailboxNo;
+	
 
+	functions added 
+	------------------------------------------------------------------------ In Exception.cc
+        unsigned long int getTheTimeStamp();
+	bool isHeldByCurrentThread(int LockID,int ClientID,int ThreadID,SvrLockData_t *SvrLocks);
+        void RespondToClient(char *SrvBuffer, int ClientID, int ThreadID,int ntThreadMailboxID);
+        void initialize(SvrLockData_t *SvrLocks, SvrCVData_t *SvrCV,SvrMVData_t  *SvrMV, int *WaitingLockInCV, List **ServerCVWaitQ, List **SvrLockWaitQ,int *SrvLockCounter, int *SrvCVCounter, int *SrvMVCounter);
+        void DecodeMsg(char *buffer, SvrLockData_t *SvrLocks, SvrCVData_t *SvrCV,SvrMVData_t  *SvrMV, int *WaitingLockInCV, List **ServerCVWaitQ, List **SvrLockWaitQ, int *SrvLockCounter, int *SrvCVCounter, int *SrvMVCounter,int ntThreadMailboxID);
+        int ServerCreateLock(int ClientID, int ThreadID,char *LockName, SvrLockData_t *SvrLocks, SvrCVData_t *SvrCV,SvrMVData_t  *SvrMV, int *WaitingLockInCV, List **ServerCVWaitQ, List **SvrLockWaitQ, int *SrvLockCounter, int *SrvCVCounter, int *SrvMVCounter,int ntThreadMailboxID);
+        int ServerAcquireLock(int ClientID, int ThreadID,int LockID,SvrLockData_t *SvrLocks, SvrCVData_t *SvrCV,SvrMVData_t  *SvrMV, int *WaitingLockInCV, List **ServerCVWaitQ, List **SvrLockWaitQ, int *SrvLockCounter, int *SrvCVCounter, int *SrvMVCounter,int ntThreadMailboxID);
+        int ServerReleaseLock(int ClientID, int ThreadID,int LockID,SvrLockData_t *SvrLocks, SvrCVData_t *SvrCV,SvrMVData_t  *SvrMV, int *WaitingLockInCV, List **ServerCVWaitQ, List **SvrLockWaitQ, int *SrvLockCounter, int *SrvCVCounter, int *SrvMVCounter,int ntThreadMailboxID);
+        int ServerDestroyLock(int ClientID, int ThreadID,int LockID,SvrLockData_t *SvrLocks, SvrCVData_t *SvrCV,SvrMVData_t  *SvrMV, int *WaitingLockInCV, List **ServerCVWaitQ, List **SvrLockWaitQ, int *SrvLockCounter, int *SrvCVCounter, int *SrvMVCounter,int ntThreadMailboxID);
+        int ServerCreateCondition(int ClientID, int ThreadID,char *CvName,SvrLockData_t *SvrLocks, SvrCVData_t *SvrCV,SvrMVData_t  *SvrMV, int *WaitingLockInCV, List **ServerCVWaitQ, List **SvrLockWaitQ, int *SrvLockCounter, int *SrvCVCounter, int *SrvMVCounter,int ntThreadMailboxID);
+        int ServerWait(int ClientID, int ThreadID,int LockID,int CvID,SvrLockData_t *SvrLocks, SvrCVData_t *SvrCV,SvrMVData_t  *SvrMV, int *WaitingLockInCV, List **ServerCVWaitQ, List **SvrLockWaitQ, int *SrvLockCounter, int *SrvCVCounter, int *SrvMVCounter,int ntThreadMailboxID);
+        int ServerDestroyCondition(int ClientID, int ThreadID,int CvID,SvrLockData_t *SvrLocks, SvrCVData_t *SvrCV,SvrMVData_t  *SvrMV, int *WaitingLockInCV, List **ServerCVWaitQ, List **SvrLockWaitQ, int *SrvLockCounter, int *SrvCVCounter, int *SrvMVCounter,int ntThreadMailboxID);
+        int ServerSignal(int ClientID, int ThreadID,int LockID,int CvID,SvrLockData_t *SvrLocks, SvrCVData_t *SvrCV,SvrMVData_t  *SvrMV, int *WaitingLockInCV, List **ServerCVWaitQ, List **SvrLockWaitQ, int *SrvLockCounter, int *SrvCVCounter, int *SrvMVCounter,int ntThreadMailboxID);
+        int ServerBroadcast(int ClientID, int ThreadID,int LockID,int CvID,SvrLockData_t *SvrLocks, SvrCVData_t *SvrCV,SvrMVData_t  *SvrMV, int *WaitingLockInCV, List **ServerCVWaitQ, List **SvrLockWaitQ, int *SrvLockCounter, int *SrvCVCounter, int *SrvMVCounter,int ntThreadMailboxID);
+        int ServerCreateMV(int ClientID, int ThreadID,char *MVName,SvrLockData_t *SvrLocks, SvrCVData_t *SvrCV,SvrMVData_t  *SvrMV, int *WaitingLockInCV, List **ServerCVWaitQ, List **SvrLockWaitQ, int *SrvLockCounter, int *SrvCVCounter, int *SrvMVCounter,int ntThreadMailboxID);
+        int ServerDestroyMV(int ClientID, int ThreadID,int MVID,SvrLockData_t *SvrLocks, SvrCVData_t *SvrCV,SvrMVData_t  *SvrMV, int *WaitingLockInCV, List **ServerCVWaitQ, List **SvrLockWaitQ, int *SrvLockCounter, int *SrvCVCounter, int *SrvMVCounter,int ntThreadMailboxID);
+        int ServerSetMV(int ClientID, int ThreadID,int MVID, int MVValue,SvrLockData_t *SvrLocks, SvrCVData_t *SvrCV,SvrMVData_t  *SvrMV, int *WaitingLockInCV, List **ServerCVWaitQ, List **SvrLockWaitQ, int *SrvLockCounter, int *SrvCVCounter, int *SrvMVCounter,int ntThreadMailboxID);
+        int ServerGetMV(int ClientID, int ThreadID,int MVID,SvrLockData_t *SvrLocks, SvrCVData_t *SvrCV,SvrMVData_t  *SvrMV, int *WaitingLockInCV, List **ServerCVWaitQ, List **SvrLockWaitQ, int *SrvLockCounter, int *SrvCVCounter, int *SrvMVCounter,int ntThreadMailboxID);         
+        void StartSimulation();
+ 
+	------------------------------------------------------------------------------------- In system.cc
+	void resendMsgfn();
+	void resendTimerfn(int dummy);
+	
+	--------------------------------------------------------------------------------------In nettest.cc
+	void KernelFn();
+	------------------------------------------------------------------------------------------------------------------------------------------------------------
+	
+	
 
-	Files added:
-		In the 'test' directory
-		"	carljrsim.c 
-
-
-	Data Structures added:
-		"	
-
-
-	Data Structures modified:
-	"	In 'userprog' directory, in  'addrspace.h'
-		class AddrSpace
-		 {
-			public:
-			Table lockTable;            // Table of User program locks
-    		Table conditionTable;       // Table of User program Conditon variables
-			TranslationEntry* GetpageTable()
-    		{
-     			 return pageTable;
-    		}
-	 	void SetpageTable(TranslationEntry *myPageTable)
-    		{
-       			pageTable=myPageTable;
-    		} 
-    	int GetnumPages()
-    	{
-      		 return  numPages;
-    	}
-   	 	void SetnumPages(int mynumPages)
-     	{
-       		 numPages=mynumPages;
-     	}
-		void DelPageTable()
-		{
-		   delete pageTable;
-		}
-	}
-
-
-	Functions added:
-	"	In start.s, the System call stubs that were added are,
-		        .globl CreateLock
-		        .ent  CreateLock
-		CreateLock:
-		         addiu $2,$0,SC_CreateLock
-		         syscall
-		         j     $31
-		         .end CreateLock
-
-		 		.globl DestroyLock
-		        .ent  DestroyLock
-		DestroyLock:
-		         addiu $2,$0,SC_DestroyLock
-		         syscall
-		         j     $31
-		         .end DestroyLock
-
-				.globl CreateCondition
-				.ent	CreateCondition
-		CreateCondition:	
-				addiu $2,$0,SC_CreateCondition
-				syscall
-				j	$31
-				.end CreateCondition
-
-			.globl DestroyCondition
-			.ent	DestroyCondition
-		DestroyCondition:	
-			addiu $2,$0,SC_DestroyCondition
-			syscall
-			j	$31
-			.end DestroyCondition
-			
-			.globl Acquire
-			.ent	Acquire
-		Acquire:	
-			addiu $2,$0,SC_Acquire
-			syscall
-			j	$31
-			.end Acquire
-
-			.globl Release
-			.ent	Release
-		Release:	
-			addiu $2,$0,SC_Release
-			syscall
-			j	$31
-			.end Release
-
-			.globl Wait
-			.ent	Wait
-		Wait:	
-			addiu $2,$0,SC_Wait
-			syscall
-			j	$31
-			.end Wait
-
-			.globl Signal
-			.ent	Signal
-		Signal:	
-			addiu $2,$0,SC_Signal
-			syscall
-			j	$31
-			.end Signal
-
-			.globl Broadcast
-			.ent	Broadcast
-		Broadcast:	
-			addiu $2,$0,SC_Broadcast
-			syscall
-			j	$31
-			.end Broadcast
-
-			.globl Print
-			.ent	Print
-		Print:	
-			addiu $2,$0,SC_Print
-			syscall
-			j	$31
-			.end Print
-		    
-		    
-			.globl Print1
-			.ent	Print1
-		Print1:	
-			addiu $2,$0,SC_Print1
-			syscall
-			j	$31
-			.end Print1
-
-
-			.globl Print2
-			.ent	Print2
-		Print2:	
-			addiu $2,$0,SC_Print2
-			syscall
-			j	$31
-			.end Print2
-
-			.globl Print3
-			.ent	Print3
-		Print3:	
-			addiu $2,$0,SC_Print3
-			syscall
-			j	$31
-			.end Print3
-
-			.globl Scan
-			.ent	Scan
-		Scan:	
-			addiu $2,$0,SC_Scan
-			syscall
-			j	$31
-			.end Scan
-
-
-	"	Functions to run the test cases were added in 'testfiles.c'
-
-		i.	void SysCallTests ()
-		ii.	void TestsForCreateLock ()
-		iii.	void TestsForAcquireLock ()
-		iv.	void TestsForReleaseLock ()
-		v.	void TestsForDestroyLock ()
-		vi.	void TestsOnLocks ()
-		vii.	void TestsForCreateConditionDestroyCondition  ()    
-		viii.	void TestsForWaitSignalBroadcast ()
-		ix.	void TestsForForkandYield ()
-		x.	void FunctionToFork ()
-		xi.	void t1 ()
-		xii.	void t2 ()
-		xiii.	void t3 ()
-		xiv.	void t4 ()
-		xv.	void t5 ()
-
-
-	"	In 'syscall.h'/ 'exception.cc'
+	functions modified
+	------------------------------------------------------------------------ In Exception.cc
+	void ExceptionHandler(ExceptionType which);
+	int CreateLock_Syscall(unsigned int vaddr, int len);
+	void DestroyLock_Syscall(int LockPos);
+	void AcquireLock_Syscall(int LockPos);
+	void ReleaseLock_Syscall(int LockPos);
+	int CreateCondition_Syscall(unsigned int vaddr, int len);
+	void DestroyCondition_Syscall(int ConditionPos);
+	void Wait_Syscall(int ConditionPos,int LockPos);
+	void Signal_Syscall(int ConditionPos,int LockPos);
+	void Broadcast_Syscall(int ConditionPos,int LockPos);
+	void Fork_Syscall( unsigned int vaddr);
+	
+	
 		
-		i.	LockId CreateLock(unsigned int vAddr, int len)
-		ii.	void DestroyLock(LockId lock)
-		iii.	void Acquire(LockId lock)
-		iv.	void Release(LockId lock)
-		v.	ConditionId CreateCondition(unsigned int vAddr, int len)
-		vi.	void DestroyCondition(ConditionId condition)
-		vii.	void Wait(ConditionId condition, LockId lock)
-		viii.	void Signal(ConditionId condition, LockId lock)
-		ix.	void Broadcast(ConditionId condition, LockId lock)
-		x.	void Print(unsigned int vaddr)
-		xi.	void Print1(unsigned int vaddr, int i)
-		xii.	void Print2(unsigned int vaddr, int i, int j)
-		xiii.	void Print3(unsigned int vaddr, int i, int j, int k)
-		xiv.	int  Scan(unsigned int vaddr)
-		xv.	void KernelFunc(int vaddr)
+	------------------------------------------------------------------------------------------------------------------------------------------------------------	
+	
+	
 
-
-	Functions modified:
-		In 'userprog' directory,
-		"	In 'addrspace.cc',  
-				AddrSpace::AddrSpace(OpenFile *executable) : fileTable(MaxOpenFiles)
-		"	In 'exception.cc'
-				void ExceptionHandler(ExceptionType which)
+	
+	
 
 
 
-V. Testing: 
 
-1.Testing of the System Calls can be done by selecting by giving the command
-nachos -x ../test/testfiles
-and then choosing the appropriate testcase from the list displayed. Tests have been written to validate all possible occurrences with Locks and Condition 
-variables.
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-2. To test multiple Carl Jr simulation, please enter nachos -x ../test/carljrtest
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
+V.Testing
+-------------
 
-	TestCase1:
-		Validates the CreateLock, Acquire, Release, DestroyLock system calls by
-			"	Passing invalid parameters to the functions
-			"	Trying to Acquire a lock that was not created
-			"	Trying to Release a lock that was not acquired
-			"	Trying to Release a lock that was not created
-			"	Trying to Destroy a lock that was not created
+	------------------------------------------------------------------------------------------------------------------------------------------------------------
+	+ How to test
 
-		Output:
-			Valid CreateLock System calls:
-			Lock1=0
-			Lock2=1
+	Compile the files in network, test directory.
+	
+	Project4:
+	
+	Test case 1: DISTRIBUTED CARL'S JUNIOR SINGLE INSTANCE
+	   
+		             Here we have implemented the entire working of carls junior. We are starting with an empty inventory level and empty raw material.
+								 Hence this simulation involves the all the 5 entities - Manager,Cook,waiter,ordertaker,customer
+								 total running entities: 20
+								 
+								 Customers: 10
+								 OrderTakers: 3
+								 Waiters:2
+								 Manager: 1
+								 Cook: 4
+								 Eatin Customers:5
+								 ToGo Customers:5
+								 
+								 
+								 Testing Steps:
+								 
+								 -> Open 2 Terminals
+								 
+								 Terminal 1: nachos -gs 20 -m 0 -d -q
+								 This runs group server registration
+								 
+								 Terminal 2:nachos -m 1 -x ../test/n0
+								 This runs carls jr simulation
+								 
+								 Expected OutPut: ALL the customers leave the restaurant once they get their food
+								 
+								 Eatin Customers:5
+								 ToGo Customers:5
+								 
+								 Customer ids that choose to eatin the restaurant: 0, 1 , 2 , 3  
+								 Customer ids that choose to go the food: 4, 5, 6 ,7 , 8 ,9  
+								 
+	Test Case 2: DISTRIBUTED CARL JR FOR MULTIPLE INSTANCE
 
-			Passing invalid values for address length:
-			Invalid size for Lock name
-			Lock3=-1
-			Invalid size for Lock name
-			Lock4=-1
-			Invalid size for Lock name
-			Lock5=-1
-
-			Passing invalid values as Lock Index:
-			ERROR: Invalid Lock Index
-			ERROR: Invalid Lock Index
-			ERROR: Invalid Lock Index
-
-			Try to Acquire a lock that was not created
-			ERROR:Lock Pointer is NULL.Acquire lock failed!
-
-			Passing invalid values as Lock Index:
-			ERROR: Invalid Lock Index
-			ERROR: Invalid Lock Index
-
-			Try to Release a lock that was not Acquired
-			ERROR:Release lock failed!
-
-			Try to Release a lock that was not Created
-			ERROR: Invalid Lock Index
-
-			Passing invalid values as Lock Index:
-			ERROR: Invalid Lock Index
-			ERROR: Invalid Lock Index
-
-			Try to Destroy a lock that was not Created
-			ERROR: Invalid Lock Index
-			No threads ready or runnable, and no pending interrupts.
-			Assuming the program completed.
-			Machine halting!
-
-			Ticks: total 1797, idle 0, system 1310, user 487
-			Disk I/O: reads 0, writes 0
-			Console I/O: reads 0, writes 0
-			Paging: faults 0
-			Network I/O: packets received 0, sent 0
-
-			Cleaning up...
-
-
-	TestCase2:
-		Other test cases for Locks, such as
-			"	Trying to Destroy a Lock that has not been released
-			"	Trying to Acquire a Lock that has been destroyed
-
-		Output:
-			Try to destroy a lock that has not been released
-			ERROR:Lock does not exist. Destroy lock failed!
-
-			Try to acquire a lock that has been destroyed:
-			ERROR:Lock Pointer is NULL.Acquire lock failed!
-			No threads ready or runnable, and no pending interrupts.
-			Assuming the program completed.
-			Machine halting!
-
-			Ticks: total 1506, idle 0, system 1270, user 236
-			Disk I/O: reads 0, writes 0
-			Console I/O: reads 0, writes 0
-			Paging: faults 0
-			Network I/O: packets received 0, sent 0
-
-			Cleaning up...
+				In this we are running reduced Carl jr simulation
+				 Customers: 2
+				 OrderTakers: 1
+				 Waiters:1
+				 Manager: 1
+				 Cook: 1
+				
+				 Testing Steps:
+								 
+								 -> Open 3 Terminals
+								 
+								 Terminal 1: nachos -gs 6 -m 0 -d -q
+								 This runs group server registration
+								 
+								 Terminal 2:nachos -m 1 -x ../test/n3
+								 This runs carls jr simulation part
+	
+								Terminal 3: nachos -m 2 -x ../test/n4
+								This runs the other part of carl jr
+								
+								Expected OutPut: ALL the customers leave the restaurant once they get their food
+								 
+							
+							
+								
+								NOTE:
+								Because there might be nachos network problem in writing to the SOCKET file, in case it doesnt respond PLEASE end and restart the simultion.
 
 
-	TestCase3:
-		Validates the CreateCondition and DestroyCondition system calls by
-			"	Passing invalid parameters to the functions
-			"	Trying to Destroy a Condition variable that was not created
+	Test Case 3: DISTRIBUTED CARL JR FOR MULTIPLE INSTANCE
 
-		Output:
-			Passing invalid values for address length:
-			Invalid size for Condition name
-			Invalid size for Condition name
-			Invalid size for Condition name
-
-			Passing invalid values as CV Index:
-			ERROR: Invalid CV Index
-			ERROR: Invalid CV Index
-
-			Try to Destroy a CV that was not Created:
-			ERROR: Invalid CV Index
-			No threads ready or runnable, and no pending interrupts.
-			Assuming the program completed.
-			Machine halting!
-
-			Ticks: total 1446, idle 0, system 1170, user 276
-			Disk I/O: reads 0, writes 0
-			Console I/O: reads 0, writes 0
-			Paging: faults 0
-			Network I/O: packets received 0, sent 0
-
-			Cleaning up...
-
-
-	TestCase4:
-	  	Validates  the Wait, Signal and Broadcast functions on Condition Variables by
-			"	Testing valid wait, signal and broadcast operations
-			"	Passing invalid parameters to the functions
-			"	Trying to wait, signal, or broadcast on a CV while holding another lock
-
-		Output:
-			Invalid size for Condition name
-
-			Pass invalid parameters to wait:
-			ERROR: Invalid CV Index
-			ERROR: Invalid Lock Index
-			ERROR: Invalid CV Index
-
-			Try to wait on the wrong Lock:
-			Lock not held by thread, Wait failed for CV CreateConditionVariable
-			t1 is going on Wait 
-
-			Pass invalid parameters to signal:
-			ERROR: Invalid CV Index
-			ERROR: Invalid Lock Index
-			ERROR: Invalid CV Index
-
-			Try to signal on the wrong Lock:
-			Locks must match, Signal failed for CV CreateConditionVariable
-			t2 is going to Signal t1 
-			 t1 was signalled 
-			t3 is going on Wait 
-			t4 is going on Wait 
-			Pass invalid parameters to broadcast:
-			ERROR: Invalid CV Index
-			ERROR: Invalid Lock Index
-			ERROR: Invalid CV Index
-
-			t5 is going to Broadcast
-			 t3 woke up 
-			 t4 woke up 
-			No threads ready or runnable, and no pending interrupts.
-			Assuming the program completed.
-			Machine halting!
-
-			Ticks: total 3832, idle 0, system 3130, user 702
-			Disk I/O: reads 0, writes 0
-			Console I/O: reads 0, writes 0
-			Paging: faults 0
-			Network I/O: packets received 0, sent 0
-
-			Cleaning up...
+				In this we are running reduced Carl jr simulation
+				 Customers: 4
+				 OrderTakers: 2
+				 Waiters:1
+				 Manager: 1
+				 Cook: 1
+				
+				 Testing Steps:
+								 
+								 -> Open 3 Terminals
+								 
+								 Terminal 1: nachos -gs 9 -m 0 -d -q
+								 This runs group server registration
+								 
+								 Terminal 2:nachos -m 1 -x ../test/n1
+								 This runs carls jr simulation part
+	
+								Terminal 3: nachos -m 2 -x ../test/n2
+								This runs the other part of carl jr
+								
+								Expected OutPut: ALL the customers leave the restaurant once they get their food
+								 
+							
+								
+								NOTE:
+								Because there might be nachos network problem in writing to the SOCKET file,so in case nachos doesnt respond PLEASE end and restart the simultion.
 
 
-	TestCase5:
-		Tests the functioning of the Fork and Yield system calls. In this test case, the fork function is called recursively and the current thread is 
-made to yield for some time to give CPU time to the forked function. The execution of this can be seen from the output of this testcase.
 
-	    Output:
-	        Forking multiple times:
-			Function forked successfully
-			Function forked successfully
-			Function forked successfully
-			Function forked successfully
-			Function forked successfully
-			Function forked successfully
-			Function forked successfully
-			Function forked successfully
-			Function forked successfully
-			Function forked successfully
-			Function forked successfully
-			Function forked successfully
-			Function forked successfully
-			Function forked successfully
-			Function forked successfully
-			Function forked successfully
-			Function forked successfully
-			Function forked successfully
-			Function forked successfully
-			Function forked successfully
-			Function forked successfully
-			Function forked successfully
-			Function forked successfully
-			Function forked successfully
-			Function forked successfully
-			Function forked successfully
-			Function forked successfully
-			Function forked successfully
-			Function forked successfully
-			Machine halting!
+								
+      
+	Extra Credit-----------------------------------------------------------------------------
 
-			Ticks: total 19852, idle 0, system 11660, user 8192
-			Disk I/O: reads 0, writes 0
-			Console I/O: reads 0, writes 0
-			Paging: faults 0
-			Network I/O: packets received 0, sent 0
-
-			Cleaning up...
-
-	 TestCase 6:
+   Test case 1:  5 instances of nachos for lost packet simulation for various -l values:
+	 
+	  Open 5 terminals, give the commands as follows in terminals 1 to 5 respectively
+		nachos -m 0 -l 0.7    
+		nachos -m 1 -l 0.7
+		nachos -m 2 -l 0.7
+		nachos -m 3 -l 0.7
+		nachos -m 4 -l 0.7
+ 
+    After entering the above commands in all the terminals, please press a number greater than 2 say 5, in all the terminals.
+	  Please enter the number within 8 seconds, if you get an error saying postoffice send failed other instance should be running, please
+		type in the commands again. 
 		
-		When this test case is executed, oneCarl's Jr Restaurant simulation programs are initiated.  The execution has been tested for various number of entities(Customer,order taker, waiter, cook and Manager)
- in the simulations
+		
+		
+		Excpected output:
+		The ouput in each of the windows is similar to the ones below:
+		
+		Terminal 0:
+		Please enter the number of nachos instances required: 
+		Kernel function has started
+		Recieved MSg 0 from 2 client
+		Recieved MSg 0 from 3 client
+		Recieved MSg 1 from 3 client
+		Recieved MSg 0 from 1 client
+		Recieved MSg 1 from 1 client
+		Recieved MSg 2 from 3 client
+		Recieved MSg 3 from 3 client
+		Recieved MSg 0 from 4 client
+		Recieved MSg 1 from 4 client
+		Recieved MSg 2 from 1 client
+		Recieved MSg 3 from 1 client
+		Recieved MSg 2 from 4 client
+		Recieved MSg 3 from 4 client
+		Recieved MSg 1 from 2 client
+		Recieved MSg 2 from 2 client
+		Recieved MSg 3 from 2 client
+		Recieved MSg 4 from 3 client
+		Recieved MSg 4 from 1 client
+		Recieved MSg 4 from 4 client
+		Recieved MSg 4 from 2 client
 
-	Multiprogramming Testing:
-				When this test case is executed, Two Carl's Jr Restaurant simulation programs are initiated. These two simulations, are seen to execute, without 
-interrupting the orderly execution of one another. The execution has been tested for various number of entities(Customer,order taker, waiter, cook and Manager)
- in the simulations
+		Terminal 1:
+		Please enter the number of nachos instances required: 
+		Kernel function has started
+		Recieved MSg 0 from 0 client
+		Recieved MSg 1 from 0 client
+		Recieved MSg 0 from 2 client
+		Recieved MSg 1 from 2 client
+		Recieved MSg 2 from 0 client
+		Recieved MSg 3 from 0 client
+		Recieved MSg 0 from 3 client
+		Recieved MSg 1 from 3 client
+		Recieved MSg 2 from 3 client
+		Recieved MSg 2 from 2 client
+		Recieved MSg 3 from 3 client
+		Recieved MSg 4 from 3 client
+		Recieved MSg 0 from 4 client
+		Recieved MSg 1 from 4 client
+		Recieved MSg 2 from 4 client
+		Recieved MSg 3 from 4 client
+		Recieved MSg 4 from 4 client
+		Recieved MSg 3 from 2 client
+		Recieved MSg 4 from 2 client
+		Recieved MSg 4 from 0 client
 
-VI. Discussion:
+		Terminal 2:
+		
+		Please enter the number of nachos instances required: 
+		Kernel function has started
+		Recieved MSg 0 from 0 client
+		Recieved MSg 1 from 0 client
+		Recieved MSg 2 from 0 client
+		Recieved MSg 3 from 0 client
+		Recieved MSg 4 from 0 client
+		Recieved MSg 0 from 1 client
+		Recieved MSg 1 from 1 client
+		Recieved MSg 2 from 1 client
+		Recieved MSg 3 from 1 client
+		Recieved MSg 4 from 1 client
+		Recieved MSg 0 from 3 client
+		Recieved MSg 1 from 3 client
+		Recieved MSg 0 from 4 client
+		Recieved MSg 1 from 4 client
+		Recieved MSg 2 from 3 client
+		Recieved MSg 3 from 3 client
+		Recieved MSg 4 from 3 client
+		Recieved MSg 2 from 4 client
+		Recieved MSg 3 from 4 client
+		Recieved MSg 4 from 4 client
 
-	Experiment expectation:
-		Multiple instances of  'Carl's Junior Restaurant Simulation' is expected to run with proper synchronization. Mutual exclusion must be ensured 
-between individual threads and between individual processes. 
+		
+		Terminal 3:
+		Please enter the number of nachos instances required: 
+		Kernel function has started
+		Recieved MSg 0 from 2 client
+		Recieved MSg 1 from 2 client
+		Recieved MSg 2 from 2 client
+		Recieved MSg 3 from 2 client
+		Recieved MSg 0 from 1 client
+		Recieved MSg 1 from 1 client
+		Recieved MSg 2 from 1 client
+		Recieved MSg 3 from 1 client
+		Recieved MSg 4 from 1 client
+		Recieved MSg 4 from 2 client
+		Recieved MSg 0 from 0 client
+		Recieved MSg 0 from 4 client
+		Recieved MSg 1 from 0 client
+		Recieved MSg 1 from 4 client
+		Recieved MSg 2 from 0 client
+		Recieved MSg 3 from 0 client
+		Recieved MSg 2 from 4 client
+		Recieved MSg 4 from 0 client
+		Recieved MSg 3 from 4 client
+		Recieved MSg 4 from 4 client
+
+		
+		Terminal 4:
+		Please enter the number of nachos instances required: 
+		Kernel function has started
+		Recieved MSg 0 from 0 client
+		Recieved MSg 1 from 0 client
+		Recieved MSg 2 from 0 client
+		Recieved MSg 0 from 2 client
+		Recieved MSg 1 from 2 client
+		Recieved MSg 2 from 2 client
+		Recieved MSg 3 from 2 client
+		Recieved MSg 3 from 0 client
+		Recieved MSg 0 from 3 client
+		Recieved MSg 1 from 3 client
+		Recieved MSg 4 from 2 client
+		Recieved MSg 4 from 0 client
+		Recieved MSg 0 from 1 client
+		Recieved MSg 1 from 1 client
+		Recieved MSg 2 from 1 client
+		Recieved MSg 3 from 1 client
+		Recieved MSg 4 from 1 client
+		Recieved MSg 2 from 3 client
+		Recieved MSg 3 from 3 client
+		Recieved MSg 4 from 3 client
+		
+		
+		Test case 2:  2 instances of nachos for lost packet simulation for -l values as low as 0.1 :
+		
+		 nachos -m 0 -l 0.1 
+		 nachos -m 1 -l 0.1
+		 
+		 Type in the above commnands and enter a number less than 2 say 1, in both the terminals withing 6secs to start the simulation
+		 
+		 Excpected output:
+		 The ouput you get after execution is similar to the one below
+		 
+		 Terminal 0:
+		Please enter the number of nachos instances required: 
+		Kernel function has started
+		Recieved MSg 0 from 1 client
+		Recieved MSg 1 from 1 client
+		Recieved MSg 2 from 1 client
+		Recieved MSg 3 from 1 client
+		Recieved MSg 4 from 1 client
+		 
+		 Terminal 1:
+		Please enter the number of nachos instances required: 
+		Kernel function has started
+		Recieved MSg 0 from 0 client
+		Recieved MSg 1 from 0 client
+		Recieved MSg 2 from 0 client
+		Recieved MSg 3 from 0 client
+		Recieved MSg 4 from 0 client
+  	 
+	
+	------------------------------------------------------------------------------------------------------------------------------------------------------------	
+	
+	
+	
+		 
+	------------------------------------------------------------------------------------------------------------------------------------------------------------	
+	
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------
+VII. Miscellaneous
+
+Carls's junior simulation shows a lot of debug messages(we ran out of time and hence we could not remove it) along with expected output, but however we have highlited the actual output in captital letters for readers convinience
 
 
-	Experimental result:
-		The testcases that have been formulated for the various system calls, test every possible illegal operation that can be performed on them. From 
-the output we can see that the system calls can handle all of those conditions by printing error messages and exiting wherever appropriate. This tests the
-I and II parts of this project. For Part-III, we ran one instance of Carl's Jr Restaurant simulation as a user program. The multi-threaded program handled
-all possible illegal conditions. Mutual exclusion and scheduling is maintained between the threads and race conditions have been eliminated. The 
-simulation has been tested for different values of -rs and with different number of employees and it has seen to be robust. To complete the test on 
-part-III, we ran two Carl's Jr simulation programs, and both of them were observed to run without interrupting the flow of another.	Thus, the expected 
-experimental result was obtained.
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 
 
 
-VII. Miscellaneous:
 
-	Simulation is not working for any of the rs values. Please run without rs values.

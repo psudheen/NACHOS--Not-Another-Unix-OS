@@ -244,7 +244,14 @@ Scan:
 	j	$31
 	.end Scan
 
-	
+	.globl StartSimulation
+	.ent	StartSimulation
+StartSimulation:	
+	addiu $2,$0,SC_StartSimulation
+	syscall
+	j	$31
+	.end StartSimulation	
+
 	.globl CreateMV
 	.ent	CreateMV
 CreateMV:
@@ -276,6 +283,16 @@ GetMV:
 	syscall
 	j	$31
 	.end GetMV
+	
+	.globl NameGen
+	.ent	NameGen
+NameGen:	
+	addiu $2,$0,SC_NameGen
+	syscall
+	j	$31
+	.end NameGen
+
+
 
 	
 /* dummy function to keep gcc happy */

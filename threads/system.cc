@@ -1,4 +1,4 @@
-// system.cc 
+ 
 //	Nachos initialization and cleanup routines.
 //
 // Copyright (c) 1992-1993 The Regents of the University of California.
@@ -29,53 +29,37 @@ SynchDisk   *synchDisk;
 
 #ifdef USER_PROGRAM	// requires either FILESYS or FILESYS_STUB
 Machine *machine;	// user program memory and registers
-Lock *processTableLock = new Lock("processTableLock");
-procTbl_t processTable[2000] = {0};
-int dummyfifo[1000];
-int dummyfifoCnt;
-int TotalProcessCount =1;
-BitMap *PhyMemBitMap;
-int TotalThreadCount =0;
-int ActiveNoOfProcess=1;
-Lock *pageTableLock[MAX_POSSIBLE_LOCKS];
-Lock *bitMapLock = new Lock("bitMapLock");
-#define SWAPFILE_SIZE 4096
-int currentTLB=0;
-int FIFO[NumPhysPages];
-_TranslationEntry *ipt;
-extern int fifo_index;
-Lock *iptlock;
-Lock *offsetLock;
-Lock *tlbLock;
-Lock *SwapFileLock;
-OpenFile *SwapFile;
-BitMap *SwapBitMap;
- Lock* swaplocLock;
- Lock* locLock;
- List *fifo;
- Lock* fifoLock;
- int rplacementPol;
 #endif
 
 #ifdef NETWORK
 PostOffice *postOffice;
-int ClientID;
-int ServerID;
-void itoa( char arr[], int size, int val );
-int myexp ( int count );
+Lock *mailBoxLock;
+int nextMailBoxNo;
 int netname;
+List *MsgQ;
+Timer *timersend;
+void resendMsgfn();
+void resendTimerfn(int dummy);
+unsigned long lastSendTime;
+Lock *msgQLock;
+bool lostPacket=false;
+int extracredit;
+int myClientID;
 #endif
 
 
 // External definition, to allow us to take a pointer to this function
 extern void Cleanup();
-
-
-
-
-
-
-
+#ifdef USER_PROGRAM
+Lock *processTableLock = new Lock("processTableLock");
+procTbl_t processTable[2000] = {0};
+int TotalProcessCount =1;
+BitMap *PhyMemBitMap = new BitMap(NumPhysPages);
+int TotalThreadCount =0;
+int ActiveNoOfProcess=1;
+Lock *pageTableLock[MAX_POSSIBLE_LOCKS];
+Lock *bitMapLock = new Lock("bitMapLock");
+#endif
 
 //----------------------------------------------------------------------
 // TimerInterruptHandler
@@ -117,12 +101,12 @@ Initialize(int argc, char **argv)
     int argCount;
     char* debugArgs = "";
     bool randomYield = FALSE;
-		
-		
-	
+		bool lostPacket =FALSE;
+		int NumberOfClients=0;
+
 #ifdef USER_PROGRAM
     bool debugUserProg = FALSE;	// single step user program
-	int i;
+	 int i;
 	Lock *LockPointer;
 	for ( i =0; i< MAX_POSSIBLE_LOCKS; i++)
 	{
@@ -130,37 +114,18 @@ Initialize(int argc, char **argv)
 		pageTableLock[i] = LockPointer;
 		//printf("%d", i);
 	}
-	 PhyMemBitMap= new BitMap(NumPhysPages);
-	
-	ipt = new _TranslationEntry[NumPhysPages];
-	iptlock= new Lock("iptlock");
-	offsetLock=new Lock("offsetLock");
-	tlbLock=new Lock("tlbLock");
-	SwapFileLock=new Lock("SwapFileLock");
-	fileSystem->Remove("SwapFile");
-	fileSystem->Create("SwapFile",65536);
-  SwapFile=fileSystem->Open("SwapFile");
-	if(SwapFile==NULL)
-	{
-		printf("Unable to open SwapFile\n");
-		interrupt->Halt();
-	}
-	
-  SwapBitMap = new BitMap(65536);
-  swaplocLock=new Lock("SwaplocLock");
- locLock=new Lock("locLock");
- fifoLock=new Lock("fifoLock");
- fifo=new List();
- dummyfifoCnt=0;
 #endif
 #ifdef FILESYS_NEEDED
     bool format = FALSE;	// format disk
 #endif
 #ifdef NETWORK
     double rely = 1;		// network reliability
-    int netname = 0;		// UNIX socket name
-		int ClientID=1;
-		int ServerID=0;
+    netname = 0;		// UNIX socket name
+		mailBoxLock=new Lock("mailBoxLock");
+		nextMailBoxNo=1;
+		MsgQ=new List();    // Global Message Q
+		msgQLock=new Lock("msgqlock");
+		extracredit=0;
 #endif
     
     for (argc--, argv++; argc > 0; argc -= argCount, argv += argCount) {
@@ -182,21 +147,6 @@ Initialize(int argc, char **argv)
 #ifdef USER_PROGRAM
 	if (!strcmp(*argv, "-s"))
 	    debugUserProg = TRUE;
-	if(!strcmp(*argv, "FIFO"))
-	{
-		rplacementPol=0;
-		printf("*******************************************************************************************************************\n");
-		printf("                                      YOU HAVE CHOSEN FIFO PAGE REPLACEMENT POLICY                                \n");    
-		printf("*******************************************************************************************************************\n");
-		
-	}
-	if(!strcmp(*argv, "RAND"))
-	{
-		rplacementPol=1;
-		printf("*******************************************************************************************************************\n");
-		printf("                                      YOU HAVE CHOSEN RANDOM PAGE REPLACEMENT POLICY                                \n");    
-		printf("*******************************************************************************************************************\n");
-	}
 #endif
 #ifdef FILESYS_NEEDED
 	if (!strcmp(*argv, "-f"))
@@ -206,12 +156,20 @@ Initialize(int argc, char **argv)
 	if (!strcmp(*argv, "-l")) {
 	    ASSERT(argc > 1);
 	    rely = atof(*(argv + 1));
+			lostPacket = true;
+			extracredit=1;
+			printf("Please enter the number of nachos instances required: \n");
+			scanf("%d",&NumberOfClients);
 	    argCount = 2;
+				
 	} else if (!strcmp(*argv, "-m")) {
 	    ASSERT(argc > 1);
 	    netname = atoi(*(argv + 1));
+			myClientID=atoi(*(argv + 1));
 	    argCount = 2;
+			
 	}
+
 #endif
     }
 
@@ -219,8 +177,12 @@ Initialize(int argc, char **argv)
     stats = new Statistics();			// collect statistics
     interrupt = new Interrupt;			// start up interrupt handling
     scheduler = new Scheduler();		// initialize the ready queue
-    if (randomYield)				// start the timer (if needed)
-		timer = new Timer(TimerInterruptHandler, 0, randomYield);
+    if (randomYield)		// start the timer (if needed)
+	timer = new Timer(TimerInterruptHandler, 0, randomYield);
+	
+#ifdef NETWORK	
+
+#endif
 
     threadToBeDestroyed = NULL;
 
@@ -246,9 +208,92 @@ Initialize(int argc, char **argv)
 #endif
 
 #ifdef NETWORK
-    postOffice = new PostOffice(netname, rely, 10);
+    postOffice = new PostOffice(netname, rely, 1024);
+		if(lostPacket)
+		{
+			timersend = new Timer(resendTimerfn,200, lostPacket);
+			if(NumberOfClients>2)
+			KernelFn2();
+			else
+			KernelFn();
+		}
 #endif
 }
+
+
+// Extra credit----------------------------------------------------------------
+  
+#ifdef NETWORK
+
+void resendTimerfn(int dummy)
+{
+	struct timeval tv;
+  
+	gettimeofday(&tv,NULL);
+
+	if((tv.tv_sec-lastSendTime)>3)
+	{
+		lastSendTime=tv.tv_sec;
+		Thread *t=new Thread("Resend Function");
+		t->Fork((VoidFunctionPtr)resendMsgfn,NULL);
+	}
+}
+
+void resendMsgfn()
+{
+  //printf("inside resend fn\n");
+	char *myMsg=new char[10];
+	char *TempBuf=new char[10];
+	char Delimiter=';';
+	int j=0;
+	int ClientID;
+	int msgNo;
+	PacketHeader outPktHdr, inPktHdr;
+	MailHeader outMailHdr, inMailHdr;
+	List *tempList=new List();
+	// Send all the message in the Q
+	while(!MsgQ->IsEmpty())
+	{
+		myMsg=(char*)MsgQ->Remove();
+		strcpy(TempBuf,myMsg);
+		//printf("Q not Empty MSG %s\n",myMsg);
+		tempList->Append((void*)myMsg);
+		char *tempMsgno=strtok(TempBuf,";");
+		char *tempClientID=strtok(NULL,";");
+		msgNo=atoi(tempMsgno);
+		ClientID=atoi(tempClientID);
+		char *data=new char[40];
+    // construct packet, mail header for original message
+    // To: destination machine, mailbox 0
+    // From: our machine, reply to: mailbox 1
+    outPktHdr.to = ClientID;		
+		outPktHdr.from= 51;
+    outMailHdr.to = 0;
+    outMailHdr.from = 0;
+		
+		
+		sprintf(data,"%s%c%d","tmsg",Delimiter,msgNo);
+		outMailHdr.length = strlen(data) + 1;
+	//	printf("sending %s to %d client %d box\n", data,outPktHdr.to,outMailHdr.from);
+		bool success = postOffice->Send(outPktHdr, outMailHdr, data);
+		if ( !success ) {
+			printf("The postOffice Send failed. You must not have the other Nachos running. Terminating Nachos.\n");
+		}		
+	}
+//	printf("**********************************Q Empty MSG *****************************************\n");
+	char *tempMesg=new char[40];
+	while(!tempList->IsEmpty())
+	{
+		tempMesg=(char*)tempList->Remove();
+		MsgQ->Append((void*)tempMesg);
+	}
+	
+	delete TempBuf;
+	delete tempList;
+	//msgQLock->Release();
+}
+#endif
+
 
 //----------------------------------------------------------------------
 // Cleanup
@@ -280,4 +325,3 @@ Cleanup()
     
     Exit(0);
 }
-

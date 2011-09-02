@@ -43,11 +43,12 @@
 #define SC_Print2						22
 #define SC_Print3						23
 #define SC_Scan							24
-#define SC_CreateMV			25
-#define SC_DestroyMV		26
-#define SC_SetMV			27
-#define SC_GetMV			28
-
+#define SC_CreateMV					25
+#define SC_DestroyMV				26
+#define SC_SetMV						27
+#define SC_GetMV						28
+#define SC_StartSimulation  29
+#define SC_NameGen  30
 
 #define MAX_CHAR_LEN  256
 
@@ -168,11 +169,13 @@ void Print1(unsigned int vaddr, int i);
 void Print2(unsigned int vaddr, int i, int j);
 void Print3(unsigned int vaddr, int i, int j, int k);
 int  Scan(unsigned int vaddr);
+void StartSimulation();
 
 int CreateMV(unsigned int vAddr, int len);	
 int DestroyMV(int MVID);
 int SetMV(int MVID, int MVValue);
 int GetMV(int MVID);
+int NameGen(unsigned int vaddr1, int i, int len, unsigned int vadd);
  
 #endif /* IN_ASM */
 

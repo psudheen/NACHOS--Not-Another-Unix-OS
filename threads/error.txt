@@ -1,0 +1,1 @@
+/usr/sfw/bin/g++ -g -Wall -Wno-unused -Wshadow -fwritable-strings -I../threads -I../machine -DTHREADS -DHOST_SPARC -DHOST_IS_BIG_ENDIAN -DHOST_SVR4 -DHOST_SunOS5 -DCHANGED -c ../threads/main.cc
